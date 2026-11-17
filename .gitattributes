@@ -1,0 +1,21 @@
+# 统一换行符：源码一律 LF，避免 Windows 上 checkout 后满屏"整文件改动"
+* text=auto eol=lf
+
+*.py     text eol=lf
+*.md     text eol=lf
+*.toml   text eol=lf
+*.json   text eol=lf
+*.jsonl  text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.lock   text eol=lf
+*.txt    text eol=lf
+
+# Git 不做行尾转换、不尝试文本 diff
+*.pdf    binary
+*.png    binary
+*.jpg    binary
+*.zip    binary
+
+# 语言统计：教材目录不计入产品代码量
+w02/**   linguist-documentation

@@ -1,0 +1,49 @@
+# ---------------- 密钥：绝对不能提交 ----------------
+# .env 里是真实的 API Key 与计费单价
+.env
+.env.*
+!.env.example
+
+# ---------------- Python ----------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# ---------------- 项目产出物 ----------------
+# chunks.jsonl 可由 `python scripts/build_index.py` 重建，
+# 不提交的理由：148KB 的派生数据，改了切分参数就是另一份。
+artifacts/
+data/
+*.log
+
+# ---------------- 语料 PDF ----------------
+# 讲义是课程方的版权材料，不进仓库。
+# 换机器时用 LLMKIT_CORPUS_DIR 指向本地目录。
+*.pdf
+
+# ---------------- 编辑器 / 操作系统 ----------------
+.vscode/settings.json.bak
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------------- 个人环境痕迹 ----------------
+# W1 改 PATH 前的手工备份，含本机绝对路径，不适合公开
+w01/user-path-backup.txt

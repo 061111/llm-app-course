@@ -1,0 +1,66 @@
+[project]
+name = "llm-app-course"
+version = "0.1.0"
+description = "基于 PDF 讲义的检索增强问答（RAG）：答案可回查原页，指标可复算"
+readme = "README.md"
+requires-python = ">=3.12"
+
+# 只放运行时真正 import 的包。grep 全仓库后确认：
+#   pydantic   —— 全部数据模型
+#   openai     —— 仅 llmkit/client.py
+#   httpx      —— openai 的传输层，测试里也用它造假响应
+#   pymupdf    —— 仅 corpus/
+dependencies = [
+    "pydantic>=2.9",
+    "openai>=1.50",
+    "httpx>=0.27",
+    "pymupdf>=2.1",
+]
+
+[project.optional-dependencies]
+# 预留给后续的 HTTP 服务层。当前代码没有任何一处 import 它们，
+# 所以默认不装：uv sync 只装上面四个，几秒钟完事。
+web = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.7",
+]
+
+[project.scripts]
+llmkit = "llmkit.__main__:main"
+corpus-store = "corpus.store:main"
+eval-retrieval = "retrieval.eval_retrieval:main"
+eval-qa = "qa.eval_qa:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["llmkit*", "corpus*", "retrieval*", "qa*"]
+
+[tool.pytest.ini_options]
+# 只有真实存在的目录。w01 是脚本不是测试包，w03/w04 尚未开工。
+testpaths = ["w02", "llmkit", "corpus", "retrieval", "qa"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv", "artifacts", "w02/0", "w02/try.py"]
+
+[tool.ruff.lint]
+# 只开"一定会出错"的规则：语法错误、未定义名字、未使用导入。
+# 不开格式化类和 isort，避免把 3800 行既有代码重排一遍制造假 diff。
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 教材层保持原样，它们是被讲解的对象，不参与风格治理
+"w02/*" = ["F401", "F841", "E402"]
