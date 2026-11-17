@@ -70,7 +70,7 @@ A: 按 5/6 算：– (1/6)log2(1/6) – (5/6)log2(5/6) = 0.65
 ### 2. 安装
 
 ```bash
-git clone <仓库地址>
+git clone https://github.com/061111/llm-app-course.git
 cd llm-app-course
 
 # 有 uv（推荐）
