@@ -30,6 +30,7 @@ import base64
 import hashlib
 import hmac
 import json
+import os
 import threading
 import time
 import urllib.error
@@ -39,6 +40,13 @@ import uuid
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from llmkit.config import (
+    ENV_ALIYUN_AK_ID,
+    ENV_ALIYUN_AK_SECRET,
+    ENV_ALIYUN_BSS_ENDPOINT,
+    load_dotenv,
+)
 
 BSS_VERSION = "2017-12-14"
 BSS_ENDPOINT = "https://business.aliyuncs.com/"
@@ -184,6 +192,36 @@ _CACHE: dict[str, tuple[float, Snapshot]] = {}
 _LOCK = threading.RLock()
 
 
+def live_settings(settings):
+    """把 Settings 里的 AK 换成 `.env` 里**此刻**写着的那一份。
+
+    【为什么需要这一步】
+      服务是常驻进程，`store.settings` 只在启动时构造一次。用户照着提示把
+      AK/SK 填进 .env 之后点"重试"，接口拿到的还是内存里那份旧配置（AK 为空），
+      界面于是继续显示"未配置"。用户看到的现象是"我明明填了，它说没填"——
+      跟代码写错完全分不清。所以每次查余额都重读一次 .env，代价是三行文本。
+
+    【优先级】
+      跟 llmkit.config.load_settings 保持一致：进程环境变量 > .env > 启动时的值。
+      传进来的 settings 留作兜底，这样测试注入假配置时行为不变。
+    """
+    if settings is None:
+        return settings
+    dotenv = load_dotenv()
+
+    def pick(name: str, attr: str) -> str:
+        live = (os.environ.get(name) or dotenv.get(name) or "").strip()
+        return live or (getattr(settings, attr, "") or "").strip()
+
+    return settings.model_copy(
+        update={
+            "aliyun_ak_id": pick(ENV_ALIYUN_AK_ID, "aliyun_ak_id"),
+            "aliyun_ak_secret": pick(ENV_ALIYUN_AK_SECRET, "aliyun_ak_secret"),
+            "aliyun_bss_endpoint": pick(ENV_ALIYUN_BSS_ENDPOINT, "aliyun_bss_endpoint"),
+        }
+    )
+
+
 def query(
     settings,
     *,
@@ -209,8 +247,9 @@ def query(
             configured=False,
             checked_at=stamp,
             hint=(
-                "查余额要用阿里云 AccessKey（不是模型密钥）。在 RAM 控制台建一个只读用户，"
-                "挂 AliyunBSSReadOnlyAccess，把 AK/SK 填进 .env 的 "
+                "查余额要用阿里云 AccessKey（不是模型密钥）。在 RAM 控制台建一个只读用户 "
+                "（ram.console.aliyun.com/users/create），勾「使用永久 AccessKey 访问」，"
+                "再给它挂 AliyunBSSReadOnlyAccess，把 AK/SK 填进 .env 的 "
                 "ALIYUN_ACCESS_KEY_ID / ALIYUN_ACCESS_KEY_SECRET"
             ),
         )

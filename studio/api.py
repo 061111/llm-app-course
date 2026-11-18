@@ -106,7 +106,7 @@ def create_app(studio: Studio | None = None) -> FastAPI:
         前端据此显示"怎么配"、"为什么失败"或数字——余额查不到不该变成红色报错，
         它跟问答本身没关系，不该让人以为服务坏了。
         """
-        return balance.query(store.settings, refresh=refresh).to_payload()
+        return balance.query(balance.live_settings(store.settings), refresh=refresh).to_payload()
 
     # ------------------------------------------------------------ 模型
 

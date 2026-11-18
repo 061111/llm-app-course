@@ -191,3 +191,52 @@ def test_请求里带的是代金券接口而不是账户余额接口():
     qs = urllib.parse.parse_qs(urllib.parse.urlparse(calls[0]).query)
     assert qs["Action"] == ["QueryCashCoupons"]
     assert qs["Version"] == ["2017-12-14"]
+
+
+# ---------------------------------------------------------------- 热加载 .env
+#
+# 这三个测试守的是一件事：用户改完 .env 点"重试"，必须立刻生效。
+# 不守它，就会出现"我明明填了，它还说没配"——而这跟代码写错长得一模一样。
+
+
+def _clean_ak_env(monkeypatch):
+    for name in ("ALIYUN_ACCESS_KEY_ID", "ALIYUN_ACCESS_KEY_SECRET", "ALIYUN_BSS_ENDPOINT"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_live_settings_读到刚写进_env的_AK(tmp_path, monkeypatch):
+    _clean_ak_env(monkeypatch)
+    (tmp_path / ".env").write_text(
+        "ALIYUN_ACCESS_KEY_ID=LTAI-new\nALIYUN_ACCESS_KEY_SECRET=s3cret\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    live = balance.live_settings(Settings(api_key="sk-x"))
+
+    assert live.aliyun_ak_id == "LTAI-new"
+    assert live.aliyun_ak_secret == "s3cret"
+    assert live.api_key == "sk-x"  # 只换 AK，模型密钥原样带过去
+
+
+def test_live_settings_环境变量优先于_env(tmp_path, monkeypatch):
+    _clean_ak_env(monkeypatch)
+    (tmp_path / ".env").write_text(
+        "ALIYUN_ACCESS_KEY_ID=LTAI-file\nALIYUN_ACCESS_KEY_SECRET=file-secret\n", encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("ALIYUN_ACCESS_KEY_ID", "LTAI-env")
+
+    live = balance.live_settings(Settings(api_key="sk-x"))
+
+    assert live.aliyun_ak_id == "LTAI-env"
+    assert live.aliyun_ak_secret == "file-secret"
+
+
+def test_live_settings_没有_env_时保留启动时的值(tmp_path, monkeypatch):
+    _clean_ak_env(monkeypatch)
+    monkeypatch.chdir(tmp_path)  # 空目录，没有 .env 文件
+
+    live = balance.live_settings(AK)
+
+    assert live.aliyun_ak_id == "LTAI-test"
+    assert live.aliyun_ak_secret == "secret-test"
