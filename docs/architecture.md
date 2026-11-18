@@ -270,7 +270,7 @@ python -m qa.eval_qa 8                   # 18 题端到端（8 是 top_k，约 1
 
 ```bash
 python -m corpus.check_gold_pages        # 逐条打开 PDF，核对黄金集引用的页是否真有正文
-pytest -o addopts="" -q                  # 422 条离线测试
+pytest -o addopts="" -q                  # 423 条离线测试
 ```
 
 ---
@@ -318,17 +318,17 @@ G15 是一次**单变量**因果实验，不是「调了就好了」：
 
 ## 11. 测试
 
-422 条，全部离线（不联网、不需要密钥）。下表是 M5 之前的四层；M5 的 `studio` 133 条见 [`upload-service.md`](upload-service.md)，其中自检 11 条见 [`selfcheck.md`](selfcheck.md)，模型切换 11 条见 [`model-switch.md`](model-switch.md)：
+423 条，全部离线（不联网、不需要密钥）。下表是 M5 之前的四层；M5 的 `studio` 133 条见 [`upload-service.md`](upload-service.md)，其中自检 11 条见 [`selfcheck.md`](selfcheck.md)，模型切换 11 条见 [`model-switch.md`](model-switch.md)：
 
 | 包 | 条数 | 覆盖重点 |
 |---|---|---|
 | `w02` | 78 | 教材层，见 §14 |
-| `llmkit` | 83 | 契约、配置优先级、脏 JSON 修复、401 不重试、断流保留半截、空正文重试、模型目录降级 |
+| `llmkit` | 84 | 契约、配置优先级、脏 JSON 修复、401 不重试、断流保留半截、空正文重试、模型目录降级 |
 | `corpus` | 90 | 解析/切分/落盘的纯函数 + 5 份真实 PDF 的集成用例 |
 | `retrieval` | 30 | 分词归一化、BM25 排序、缓存、跨语言对照、中文问句套话剥离 |
 | `qa` | 20 | prompt 结构、引用解析、越界误报回归、判卷容错 |
 
-条数用 `pytest <pkg> --collect-only -q` 逐个核过（2026-11-17；M5 新增 studio、M6 新增自检、M7 新增模型切换后总数 422，2026-11-18 复核：llmkit 83 / corpus 90 / retrieval 30 / qa 20 / studio 133 / w02 78）。
+条数用 `pytest <pkg> --collect-only -q` 逐个核过（2026-11-17；M5 新增 studio、M6 新增自检、M7 新增模型切换后总数 423，2026-11-18 复核：llmkit 84 / corpus 90 / retrieval 30 / qa 20 / studio 133 / w02 78）。
 
 集成用例用 `skipif(not corpus_available())` 守卫。把语料目录指向空目录实测（`LLMKIT_CORPUS_DIR=/tmp/empty`）：**268 passed, 15 skipped**——15 条依赖真实 PDF 的用例跳过，其余全部照跑，不会一片红。
 

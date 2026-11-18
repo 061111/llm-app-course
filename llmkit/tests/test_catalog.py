@@ -70,6 +70,19 @@ def test_推理型模型的输出预算更大():
     assert DEFAULT_MAX_TOKENS > 800
 
 
+def test_默认模型是推荐表第一行():
+    """前端在上游清单拉不到、或 .env 里配的模型不在清单里时，会退回推荐表第一行。
+
+    所以第一行和 .env 的 LLMKIT_MODEL 必须是同一个模型，否则用户会看到
+    "下拉显示 A、实际回答用 B"，而且只有翻 .env 才发现。
+    """
+    first = RECOMMENDED[0]
+    assert first.id == "deepseek-v4.1-flash"
+    # 实测 reasoning_tokens=0，所以不该占推理预算
+    assert first.reasoning is False
+    assert first.max_tokens == DEFAULT_MAX_TOKENS
+
+
 def test_没实测过的模型按默认预算_不猜它是不是推理型():
     """名字里带 -think 不代表它真的思考。猜错的代价是钱和延迟，而默认值两边都不亏。"""
     entry = entry_for("some-brand-new-model")

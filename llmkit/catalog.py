@@ -65,13 +65,17 @@ class ModelEntry(BaseModel):
 
 
 # 推荐表：全部在 2026-11-18 用同一句话实测过，耗时是那次调用的墙钟时间。
-# 顺序有意义：第一行是默认值，也是"不知道选什么就选这个"。
+# 顺序有意义：第一行是默认值（.env 里的 LLMKIT_MODEL 应与它一致），
+# 也是"不知道选什么就选这个"；上游清单拉不到时前端也会退回第一行。
 RECOMMENDED: tuple[ModelEntry, ...] = (
-    ModelEntry(id="qwen3.8-flash", note="快且便宜，日常问答首选（实测 1.5 s）"),
+    ModelEntry(
+        id="deepseek-v4.1-flash",
+        note="默认档，非推理型、快且稳（实测 1.1 s）",
+    ),
+    ModelEntry(id="qwen3.8-flash", note="快且便宜，日常问答备选（实测 1.5 s）"),
     ModelEntry(id="qwen3.8-max", note="旗舰，答案更完整（实测 4.1 s）"),
     ModelEntry(id="qwen-plus", note="通用档，稳定（实测 2.0 s）"),
     ModelEntry(id="qwen-max", note="上一代旗舰，最快（实测 1.1 s）"),
-    ModelEntry(id="deepseek-v4.1-flash", note="第三方 DeepSeek 快速版（实测 1.1 s）"),
     ModelEntry(
         id="deepseek-v4-pro",
         note="推理型，先想后答，慢但更周全（实测 16.9 s）",

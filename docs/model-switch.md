@@ -212,7 +212,7 @@ LLMKIT_MODEL=默认模型名
 | M2 | 换了真的换 | 请求体内 `model` 真的到了上游，答案卡片显示本次模型 | `_last_call(s)["model"]` 断言 + 三个模型端到端跑通 |
 | M3 | 推理型不会吐空 | 选 `deepseek-v4-pro` 能正常答 | `max_tokens=4000`，实测正文 668 token，引用越界 0 |
 | M4 | 上游挂了界面能开 | `/api/models` 失败时降级为推荐表 | 单测覆盖：假客户端无 `models` 接口 → `source=fallback` |
-| M5 | 不弄坏原有能力 | 全量测试全绿 | **422 passed / 12 skipped**（新增 catalog 11 条、service 7 条、api 4 条；顺手删掉两组重复定义的测试，它们原来被后一份覆盖，等于没跑） |
+| M5 | 不弄坏原有能力 | 全量测试全绿 | **423 passed / 12 skipped**（新增 catalog 12 条、service 7 条、api 4 条；顺手删掉两组重复定义的测试，它们原来被后一份覆盖，等于没跑） |
 | M6 | 选择能记住 | 刷新页面还是上次选的；选过的模型已失效时自动回落 | `localStorage` + 清单校验（代码审查，无 headless 测试） |
 
 `ruff check studio retrieval llmkit qa` 通过。
@@ -224,10 +224,10 @@ LLMKIT_MODEL=默认模型名
 | 文件 | 改了什么 |
 |---|---|
 | `llmkit/catalog.py` | **新增**。推荐表（含实测耗时与预算）、非聊天模型黑名单、上游清单拉取与 10 分钟缓存、三种 source 的降级 |
-| `llmkit/tests/test_catalog.py` | **新增** 11 条。过滤、预算、缓存过期、过期时钟、上游失败、默认模型不在清单 |
+| `llmkit/tests/test_catalog.py` | **新增** 12 条。过滤、预算、缓存过期、过期时钟、上游失败、默认模型不在清单 |
 | `qa/answer.py` | `answer_question(..., max_tokens=)`；`Answer.model` 记录实际模型 |
 | `studio/service.py` | `settings_for()` / `models()`；`ask` / `profile` / `selfcheck` 接受 `model`；输出预算按模型查 |
 | `studio/selfcheck.py` | `run_selfcheck(..., model=)`；报告里记录本次用的模型 |
 | `studio/api.py` | `GET /api/models`；`/api/ask` 读 `model`；画像与自检的 `model` 查询参数；`health` 加 `has_key` |
 | `studio/static/index.html` | 提问卡头部的模型下拉（分组、悬停备注、降级变黄）、`localStorage` 记忆、答案与自检结果显示本次模型、390px 下整行独占 |
-| `.env` | 密钥与地址换成阿里云百炼；默认模型 `qwen3.8-flash`；单价置 0（原因见 §6） |
+| `.env` | 密钥与地址换成阿里云百炼；默认模型 `deepseek-v4.1-flash`；单价置 0（原因见 §6） |

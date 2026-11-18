@@ -163,7 +163,7 @@ pytest llmkit -v
 
 | # | 标准 | 状态 |
 |---|---|---|
-| 1 | `pytest llmkit` 全绿，≥20 条 | ✅ 83 条（全项目 422 条，含 corpus/retrieval/qa/studio） |
+| 1 | `pytest llmkit` 全绿，≥20 条 | ✅ 84 条（全项目 423 条，含 corpus/retrieval/qa/studio） |
 | 2 | 真实调用跑通一次 | ✅ 2026-11-17 用 DeepSeek 实测（见下） |
 | 3 | 能讲清"一次 ask 经过哪 5 层" | 见下方 |
 
