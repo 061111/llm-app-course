@@ -96,7 +96,6 @@ LATIN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:[.\-_][A-Za-z0-9]+)*")
 
 MAX_TERM_LEN = 6
 MAX_OCCURRENCES = 3
-CONTEXT_PAD = 18
 
 
 class Occurrence(BaseModel):
@@ -157,11 +156,79 @@ def _freedom(left: Counter[str], right: Counter[str]) -> float:
     return min(scores) if scores else math.inf
 
 
+MAX_SNIPPET = 100  # 一次展示的字数上限
+CELL_MAX = 60  # 短于这个长度就当作表格单元格，整行照抄
+LABEL_MAX = 16  # 上一行短于这个长度且无句读，就当成表头/列名当前缀
+
+_SENT_BREAK = "。！？；"
+
+
+def _prev_label(page_text: str, line_start: int) -> str:
+    """上一行如果长得像表头（短、没有句读），返回它。表格里这一格靠它才有语义。"""
+    head_end = line_start - 1
+    if head_end <= 0:
+        return ""
+    head_start = page_text.rfind("\n", 0, head_end) + 1
+    label = page_text[head_start:head_end].strip()
+    if not label or len(label) > LABEL_MAX:
+        return ""
+    # 带空白的多半是"第 3 章　聚类分析"这种章标题，不是表格列名，别当前缀。
+    if any(ch.isspace() for ch in label):
+        return ""
+    if any(ch in label for ch in "。！？；，、,."):
+        return ""
+    return label
+
+
+def _sentence_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    """把 [start,end) 扩展到两侧最近的句读或换行，总长不超过 2×MAX_SNIPPET。"""
+    lo = start
+    floor = max(0, start - MAX_SNIPPET)
+    while lo > floor and text[lo - 1] not in _SENT_BREAK and text[lo - 1] != "\n":
+        lo -= 1
+    hi = end
+    ceil = min(len(text), end + MAX_SNIPPET)
+    while hi < ceil and text[hi] not in _SENT_BREAK and text[hi] != "\n":
+        hi += 1
+    if hi < len(text) and text[hi] in _SENT_BREAK:
+        hi += 1
+    return lo, hi
+
+
+def snippet(page_text: str, start: int, end: int) -> str:
+    """术语所在的那一段原文。优先整行（表格一格），长行再按句读切。
+
+    【为什么不再按固定字数左右切】
+      这份资料的正文大量是表格，解析后**一个单元格一行**。左右各切 18 字，
+      会把上下两个不相干的单元格粘成一句，再让一次硬截断把两头切断：
+        （旋转是标准步骤） 典型用途 降维、综合评价、去共线性、可视化 寻找潜变量、给指
+      看着像病句，其实是三格文字 + 两次断头。改成"取整行 + 补一格表头"后，
+      同一处显示为：
+        典型用途 › 降维、综合评价、去共线性、可视化
+      这才是这一格真正在说什么。
+
+    长段落（>CELL_MAX）仍按句读切，保证至少是一句完整的话。
+    """
+    line_start = page_text.rfind("\n", 0, start) + 1
+    line_end = page_text.find("\n", end)
+    if line_end < 0:
+        line_end = len(page_text)
+    line = page_text[line_start:line_end].strip()
+
+    if line and len(line) <= CELL_MAX:
+        label = _prev_label(page_text, line_start)
+        return f"{label} › {line}" if label else line
+
+    lo, hi = _sentence_bounds(page_text, start, end)
+    out = re.sub(r"\s{2,}", " ", page_text[lo:hi].replace("\n", " ")).strip()
+    if len(out) > MAX_SNIPPET:
+        out = out[:MAX_SNIPPET].rstrip() + "…"
+    return out
+
+
 def _context(page_text: str, start: int, end: int) -> str:
-    lo = max(0, start - CONTEXT_PAD)
-    hi = min(len(page_text), end + CONTEXT_PAD)
-    snippet = page_text[lo:hi].replace("\n", " ")
-    return re.sub(r"\s{2,}", " ", snippet).strip()
+    """兼容旧名：Occurrence.context 仍从这里取。"""
+    return snippet(page_text, start, end)
 
 
 class GlossaryBuilder:

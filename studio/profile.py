@@ -44,7 +44,7 @@ from llmkit.parsing import parse_with_repair, repair_prompt
 from llmkit.types import AskOptions, Usage
 from retrieval.bm25 import tokenize
 from studio.errors import LlmUnavailable
-from studio.glossary import Term
+from studio.glossary import Term, snippet
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_PROFILE_DIR = PROJECT_ROOT / "artifacts" / "profiles"
@@ -239,12 +239,11 @@ def _pages_of(term: str, pages: list[PageText], *, limit: int = 3) -> tuple[str,
 
 
 def _evidence_of(term: str, pages: list[PageText]) -> str:
+    """术语在原文里的一次出现，按"整行（表格一格）+ 表头前缀"取，不按字数硬切。"""
     for p in pages:
         idx = p.text.find(term)
         if idx >= 0:
-            lo = max(0, idx - 18)
-            hi = min(len(p.text), idx + len(term) + 18)
-            return re.sub(r"\s{2,}", " ", p.text[lo:hi].replace("\n", " ")).strip()
+            return snippet(p.text, idx, idx + len(term))
     return ""
 
 

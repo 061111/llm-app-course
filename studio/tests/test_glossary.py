@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from corpus.parser import PageText
 
-from studio.glossary import GlossaryBuilder, mine_terms
+from studio.glossary import GlossaryBuilder, mine_terms, snippet
 
 
 def _page(text: str, page: int = 1, doc_id: str = "u001") -> PageText:
@@ -111,3 +111,60 @@ def test_builder_可增量喂入():
     terms = b.build(top_n=10)
     term = next(t for t in terms if t.text == "距离矩阵")
     assert term.freq == SAMPLE.count("距离矩阵") * 2
+
+
+# ---------------------------------------------------------------- 原文片段
+#
+# 这一组守的是"术语旁边那行字读得懂"。原来的做法是左右各切 18 字再拼接，
+# 遇到表格（解析后一个单元格一行）就会把上下两格粘成一句、两头还各断一刀：
+#   （旋转是标准步骤） 典型用途 降维、综合评价、去共线性、可视化 寻找潜变量、给指
+# 用户看到的第一反应是"这是病句吧"。所以要按行/按句取，不按字数取。
+
+
+def test_表格单元格取整行并补上表头():
+    page = "\n".join(
+        [
+            "是否有旋转",
+            "无",
+            "有（旋转是标准步骤）",
+            "典型用途",
+            "降维、综合评价、去共线性、可视化",
+            "寻找潜变量、给指标分类、问卷结构效度",
+        ]
+    )
+    i = page.index("综合评价")
+
+    got = snippet(page, i, i + len("综合评价"))
+
+    assert got == "典型用途 › 降维、综合评价、去共线性、可视化"
+
+
+def test_长段落按句读切出完整一句():
+    page = "第一句。" + "啊" * 70 + "这里有术语存在。" + "哦" * 70
+    i = page.index("术语")
+
+    got = snippet(page, i, i + len("术语"))
+
+    assert got == "啊" * 70 + "这里有术语存在。"
+    assert got.startswith("啊")   # 没有断头
+    assert got.endswith("。")     # 没有断尾
+
+
+def test_超长无标点行也不会切出一百字以上():
+    page = "甲" * 80 + "术语" + "乙" * 80
+
+    got = snippet(page, 80, 82)
+
+    assert "术语" in got
+    assert len(got) <= 101
+
+
+def test_章标题不当表头前缀():
+    """带空格的短行是章标题，不是表格列名，拼成前缀只会让人更糊涂。"""
+    page = "第 3 章　聚类分析\n3.1 如何测度样本与变量之间的相似性"
+    i = page.index("变量")
+
+    got = snippet(page, i, i + len("变量"))
+
+    assert not got.startswith("第 3 章")
+    assert "变量" in got
