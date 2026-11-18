@@ -4,6 +4,8 @@
 
 输入 5 份数据挖掘讲义（199 页），输出带页码引用的答案；配套 18 道人工核对的标准题，任何改动都能用同一把尺子量出好坏。
 
+也可以**换成你自己的资料**：上传 PDF / TXT / MD（中文同样支持），系统抽出术语与领域措辞、注入问答，每个结论照样能翻回原页。见 [`docs/upload-service.md`](docs/upload-service.md)。
+
 ```
 Q: chap03 第 70 页那个熵 0.65 是怎么算出来的？
 A: 按 5/6 算：– (1/6)log2(1/6) – (5/6)log2(5/6) = 0.65
@@ -37,6 +39,7 @@ A: 按 5/6 算：– (1/6)log2(1/6) – (5/6)log2(5/6) = 0.65
 | 读文档 | `corpus` | PDF 按页抽文本（按坐标去页码、符号还原成 `∧`/`⇒`/`×`）→ 按页切块（带页码偏移）→ jsonl 落盘 |
 | 找内容 | `retrieval` | 中文问题翻成英文关键词，纯 Python BM25 检索，零依赖 |
 | 答并自查 | `qa` | 拼带出处头的 prompt，强制标 `【chap03:p70】`，事后核对引用是否越界、资料不足时是否拒答 |
+| 上传自己的资料 | `studio` | 上传 → 解析 → 术语抽取（带页码）→ 领域画像（模型只从候选里挑，逐字回原文校验）→ Web 界面问答 |
 
 ## 实测效果
 
@@ -47,7 +50,10 @@ A: 按 5/6 算：– (1/6)log2(1/6) – (5/6)log2(5/6) = 0.65
 | 问答 | 判分正确率（top_k=5 / 8） | 17/18 / **18/18** |
 | 问答 | 引用越界 | 0 |
 | 拒答 | 语料外问题（MySQL / Transformer / 考试日期） | 3/3 拒绝作答，0 编造 |
-| 测试 | 全套 | 283 passed |
+| 中文资料检索 | hit@1 / MRR（30 页中文样本，10 题） | **10/10** / **1.000**（开卷：题照原文写） |
+| 中文资料问答 | 引用越界 / 资料外拒答 | 0 / 2 题 2 拒答 |
+| 术语抽取 | 编造术语（真实调用 16 个术语） | **0** |
+| 测试 | 全套 | **393 passed**（本机样本齐全）；缺中文样本时 381 passed + 12 skipped |
 
 **这些数字的可信度边界**：18 道题的答案就出自这 199 页，模型看的是原文——这是开卷且答案在手。它证明链路没断、引用没编、该拒答时会拒答，**不证明泛化能力**。换成没见过的文档会掉多少，目前不知道。
 
@@ -73,8 +79,11 @@ A: 按 5/6 算：– (1/6)log2(1/6) – (5/6)log2(5/6) = 0.65
 git clone https://github.com/061111/llm-app-course.git
 cd llm-app-course
 
-# 有 uv（推荐）
+# 有 uv（推荐）：只要核心四层
 uv sync --extra dev
+
+# 想用上传服务与网页界面，再多装一组
+uv sync --extra dev --extra web
 
 # 只有 pip
 python -m venv .venv
@@ -128,7 +137,7 @@ export LLMKIT_CORPUS_DIR=/path/to/pdfs       # Linux/macOS
 set LLMKIT_CORPUS_DIR=D:\path\to\pdfs        # Windows cmd
 ```
 
-**没有这批 PDF 也能跑测试**：283 条里有 268 条是纯函数测试，不碰文件；其余 15 条会自动跳过。但建索引和端到端问答需要真实语料。
+**没有这批 PDF 也能跑测试**：393 条里 366 条不碰文件；15 条依赖课程语料、12 条依赖中文样本，缺文件时自动跳过（`381 passed, 12~27 skipped`），不会一片红。但建索引和端到端问答需要真实语料。
 
 ### 5. 建索引并提问
 
@@ -139,6 +148,17 @@ python -m qa.eval_qa 8                 # 端到端跑 18 道黄金题（需语�
 ```
 
 索引只建一次，之后所有查询都读 `artifacts/chunks.jsonl`。改切分参数才需要重跑第一步。
+
+### 6. 用自己的资料（可选）
+
+不用改代码，也不用建索引 —— 启动服务后直接在网页上传：
+
+```bash
+python -m studio                 # http://127.0.0.1:8000
+```
+
+上传 → 看术语表（带页码）→ 点「生成画像」→ 提问。中文资料直接检索，
+英文资料自动加「中文问题 → 英文关键词」翻译。详见 [`docs/upload-service.md`](docs/upload-service.md)。
 
 ---
 
@@ -171,6 +191,7 @@ python -m qa.eval_qa 8                 # 端到端跑 18 道黄金题（需语�
 | `python -m corpus.eval_chunking` | 切分方案对比矩阵（3 种分组 × 4 个上限） |
 | `python -m retrieval.eval_retrieval` | 检索指标 hit@k / MRR |
 | `python -m qa.eval_qa [top_k]` | 端到端 18 题评估与判分 |
+| `python -m studio` | 启动上传服务与网页界面（需 `--extra web`） |
 | `python scripts/verify.py` | 提交前总检查：lint + 测试 + 索引 + 配置 |
 | `python scripts/bootstrap.py --check` | 只体检环境，不安装 |
 
@@ -192,7 +213,8 @@ python scripts/verify.py   # lint + 测试 + 索引 + 配置，四项一起过
 | `corpus` | 90 | 页码过滤、符号映射、切分边界、序列化往返 |
 | `retrieval` | 25 | 分词归一化、BM25 打分、翻译缓存 |
 | `qa` | 20 | prompt 拼装、引用解析、越界检测、双轨判分 |
-| **合计** | **283** | 全部离线可跑，不依赖真实 API |
+| `studio` | 110 | 中文分词、上传登记、解析安检、术语出处、画像校验、服务与 API（其中 12 条需中文样本） |
+| **合计** | **393** | 全部离线可跑，不依赖真实 API |
 
 需要真实 API 的只有 `qa/eval_qa.py` 和 `retrieval/eval_retrieval.py` 的翻译步骤；后者带文件缓存，重复跑不重复花钱。
 
@@ -228,6 +250,15 @@ llm-app-course/
 │   ├── query.py              中文问题 → 英文关键词（带缓存）
 │   ├── search.py             索引 + 翻译 + 检索
 │   └── eval_retrieval.py     hit@k / MRR
+├── studio/                   上传服务层（新增）
+│   ├── library.py            上传登记表（可写，带 sha256 去重）
+│   ├── ingest.py             安检（后缀/大小/魔数/文本层）+ 解析
+│   ├── glossary.py           术语抽取（PMI + 左右邻字熵，带页码出处）
+│   ├── profile.py            领域画像 + 三道机械校验
+│   ├── service.py            编排与缓存
+│   ├── api.py                FastAPI 路由
+│   ├── __main__.py           python -m studio
+│   └── static/index.html     单页界面
 ├── qa/                       生成与评估层
 │   ├── prompt.py             片段拼装，强制出处格式
 │   ├── answer.py             一次完整问答 + 引用越界检测
@@ -258,7 +289,7 @@ llm-app-course/
 2. **表格会竖排**。`chap04a` 第 3 页的动物表被抽成 132 行、一格一行，列关系丢失。现有题目不依赖它，但要做「按规则表判断 frog 属于哪类」必须先还原表格。
 3. **词法检索分不出「定义页」和「算例页」**。同一批术语在两类页里都密集出现，BM25 只能靠数字（`(0,6)`、`(1,5)`）这类信号区分。其中一道题至今需要 `top_k=8` 才能召回。
 4. **单机、同步、无并发**。`ask()` 是同步函数，批量调用是串行的。
-5. **没有 Web 服务**。只提供 CLI 与 Python 库两种用法，见下节。
+5. **Web 服务是本地单机的**。`studio` 提供网页界面与 HTTP 接口，但**没有鉴权、没有并发**，只绑 `127.0.0.1`；多文档共用一个 BM25 池，资料一多 IDF 会互相稀释。上生产前必须补的三件事见 [`docs/upload-service.md`](docs/upload-service.md) §9。
 
 ## 部署与使用
 
@@ -279,13 +310,18 @@ print(ans.cited_sources)   # ('chap03:p73',)
 print(ans.unsupported)     # () 表示没有编造的引用
 ```
 
-**作为本地服务部署**：`pyproject.toml` 预留了 `web` extra（FastAPI + Uvicorn），默认不装：
+**作为本地服务运行**：
 
 ```bash
 uv sync --extra web
+python -m studio                 # http://127.0.0.1:8000
 ```
 
-服务层代码尚未实现。若自行封装，注意两点：`Searcher` 初始化较慢（要读 181 块建索引），应在进程启动时建一次并复用；`ask()` 是同步的，放进异步框架要用 `run_in_threadpool` 之类的方式包一层，否则会阻塞事件循环。
+服务端的两个性能事实（都已处理，但改代码时要留意）：
+`Searcher` 初始化要读全部块建索引，`Studio` 因此按"文档集合"缓存检索器；
+`ask()` 是同步的，服务端用的是同步端点（FastAPI 会放进线程池），不要直接塞进 `async def` 里。
+
+**上传自己的资料**也走这个服务：拖入文件即可，不需要改 `corpus/docs.py`，也不需要重建索引。
 
 ## 贡献规范
 
@@ -294,7 +330,7 @@ uv sync --extra web
 **提交前必须通过**
 
 ```bash
-python scripts/verify.py     # lint + 283 条测试 + 索引对账 + 配置检查
+python scripts/verify.py     # lint + 393 条测试 + 索引对账 + 配置检查
 ```
 
 四项有一项红就不要提交。特别地，`pytest` 必须全绿，新增逻辑要配测试。
@@ -332,6 +368,7 @@ chore     配置、依赖、脚本
 |---|---|
 | `README.md` | 项目入口：能做什么、怎么跑、怎么测 |
 | [`docs/architecture.md`](docs/architecture.md) | 架构、数据模型、两条流程、八个关键决策、逐项指标与复现命令 |
+| [`docs/upload-service.md`](docs/upload-service.md) | 上传服务与中文理解：功能范围、验收标准、七个关键决定、异常矩阵、实测数据、限制 |
 | [`docs/course-plan.md`](docs/course-plan.md) | 24 周学习排期与取舍（与代码无关） |
 | [`llmkit/README.md`](llmkit/README.md) | 模型调用层的模块说明与异常表 |
 | [`w02/README.md`](w02/README.md) | W2 教材层的周级索引 |

@@ -269,7 +269,7 @@ python -m qa.eval_qa 8                   # 18 题端到端（8 是 top_k，约 1
 
 ```bash
 python -m corpus.check_gold_pages        # 逐条打开 PDF，核对黄金集引用的页是否真有正文
-pytest -o addopts="" -q                  # 283 条离线测试
+pytest -o addopts="" -q                  # 393 条离线测试
 ```
 
 ---
@@ -317,7 +317,7 @@ G15 是一次**单变量**因果实验，不是「调了就好了」：
 
 ## 11. 测试
 
-283 条，全部离线（不联网、不需要密钥）：
+393 条，全部离线（不联网、不需要密钥）。下表是 M5 之前的四层；M5 新增的 `studio` 110 条见 [`upload-service.md`](upload-service.md)：
 
 | 包 | 条数 | 覆盖重点 |
 |---|---|---|
@@ -327,7 +327,7 @@ G15 是一次**单变量**因果实验，不是「调了就好了」：
 | `retrieval` | 25 | 分词归一化、BM25 排序、缓存、跨语言对照 |
 | `qa` | 20 | prompt 结构、引用解析、越界误报回归、判卷容错 |
 
-条数用 `pytest <pkg> --collect-only -q` 逐个核过（2026-11-17）。
+条数用 `pytest <pkg> --collect-only -q` 逐个核过（2026-11-17；M5 新增 studio 后总数 393，2026-11-18 复核）。
 
 集成用例用 `skipif(not corpus_available())` 守卫。把语料目录指向空目录实测（`LLMKIT_CORPUS_DIR=/tmp/empty`）：**268 passed, 15 skipped**——15 条依赖真实 PDF 的用例跳过，其余全部照跑，不会一片红。
 

@@ -18,11 +18,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# 预留给后续的 HTTP 服务层。当前代码没有任何一处 import 它们，
-# 所以默认不装：uv sync 只装上面四个，几秒钟完事。
+# 只有上传服务（studio/api.py）用得到，且是**可选**的：
+# 核心四层 + 全部离线测试不 import 它们，uv sync 只装上面四个，几秒钟完事。
+# 要用 Web 界面时：uv sync --extra web
 web = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.9",
 ]
 dev = [
     "pytest>=8.3",
@@ -35,17 +37,18 @@ llmkit = "llmkit.__main__:main"
 corpus-store = "corpus.store:main"
 eval-retrieval = "retrieval.eval_retrieval:main"
 eval-qa = "qa.eval_qa:main"
+studio-serve = "studio.__main__:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["llmkit*", "corpus*", "retrieval*", "qa*"]
+include = ["llmkit*", "corpus*", "retrieval*", "qa*", "studio*"]
 
 [tool.pytest.ini_options]
 # 只有真实存在的目录。w01 是脚本不是测试包，w03/w04 尚未开工。
-testpaths = ["w02", "llmkit", "corpus", "retrieval", "qa"]
+testpaths = ["w02", "llmkit", "corpus", "retrieval", "qa", "studio"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 addopts = "-q"

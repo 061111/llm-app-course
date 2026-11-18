@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>资料问答工作台</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#15181d; --muted:#6b7280;
+    --line:#e4e6ea; --line-strong:#cfd3da;
+    --accent:#2563eb; --accent-soft:#eef3ff;
+    --ok:#15803d; --ok-soft:#eaf7ee;
+    --warn:#b45309; --warn-soft:#fdf3e3;
+    --bad:#b91c1c; --bad-soft:#fdeceb;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  header{
+    display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    padding:18px 24px;background:var(--card);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;
+  }
+  header h1{font-size:16px;margin:0;letter-spacing:.2px}
+  header .sub{color:var(--muted);font-size:12.5px}
+  .grow{flex:1}
+  .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:6px}
+  .dot.off{background:var(--bad)}
+
+  main{display:grid;grid-template-columns:360px minmax(0,1fr);gap:18px;padding:18px 24px 64px;max-width:1440px;margin:0 auto}
+  @media (max-width:1080px){ main{grid-template-columns:1fr} }
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius)}
+  .card h2{font-size:13px;margin:0;padding:13px 16px;border-bottom:1px solid var(--line);
+    font-weight:600;letter-spacing:.3px;color:var(--muted);text-transform:none;display:flex;align-items:center;gap:8px}
+  .card .body{padding:14px 16px}
+  .card h2 .count{margin-left:auto;font-weight:400;font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+
+  /* ---- upload ---- */
+  .drop{
+    border:1.5px dashed var(--line-strong);border-radius:var(--radius);
+    padding:22px 16px;text-align:center;cursor:pointer;transition:.15s;
+    background:#fbfbfc;
+  }
+  .drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+  .drop b{display:block;font-size:13.5px;margin-bottom:4px}
+  .drop span{color:var(--muted);font-size:12px}
+  .hint{color:var(--muted);font-size:12px;margin-top:10px;line-height:1.7}
+
+  /* ---- doc list ---- */
+  .docs{display:flex;flex-direction:column;gap:8px;max-height:none}
+  .doc{
+    border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer;
+    transition:.12s;position:relative;background:#fff;
+  }
+  .doc:hover{border-color:var(--line-strong)}
+  .doc.active{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .doc .name{font-weight:600;font-size:13px;word-break:break-all;padding-right:44px}
+  .doc .meta{color:var(--muted);font-size:11.5px;font-family:var(--mono);margin-top:4px}
+  .doc .del{position:absolute;right:8px;top:8px;border:0;background:none;color:var(--muted);
+    cursor:pointer;font-size:15px;line-height:1;padding:3px 5px;border-radius:5px}
+  .doc .del:hover{background:var(--bad-soft);color:var(--bad)}
+  .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+  .tag{font-size:10.5px;padding:1px 6px;border-radius:4px;background:#f1f3f6;color:var(--muted);font-family:var(--mono)}
+  .tag.zh{background:var(--accent-soft);color:var(--accent)}
+  .tag.en{background:var(--ok-soft);color:var(--ok)}
+  .tag.prof{background:var(--warn-soft);color:var(--warn)}
+
+  /* ---- buttons ---- */
+  button.act{
+    border:1px solid var(--line-strong);background:#fff;color:var(--ink);
+    padding:6px 12px;border-radius:7px;font-size:12.5px;cursor:pointer;transition:.12s;
+  }
+  button.act:hover{border-color:var(--accent);color:var(--accent)}
+  button.act:disabled{opacity:.5;cursor:not-allowed}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.06);color:#fff}
+
+  /* ---- terms ---- */
+  .term-row{display:grid;grid-template-columns:172px 1fr;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line);align-items:start}
+  .term-row:last-child{border-bottom:0}
+  .term-name{font-weight:600;font-size:13px;line-height:1.4}
+  .term-name em{font-style:normal;color:var(--muted);font-weight:400;font-family:var(--mono);font-size:11px;margin-left:5px}
+  .term-ctx{color:var(--muted);font-size:12px;line-height:1.55}
+  .pages{display:flex;gap:4px;flex-wrap:wrap;margin-top:5px}
+  .page{font-family:var(--mono);font-size:10.5px;background:#f1f3f6;border-radius:4px;padding:0 5px;color:var(--muted)}
+  .empty{color:var(--muted);font-size:12.5px;padding:6px 0}
+  /* 术语表可能上百条：给固定高度让右侧"领域画像/提问"不被顶到屏幕外 */
+  #terms{max-height:440px;overflow-y:auto;overscroll-behavior:contain}
+  #profile{max-height:560px;overflow-y:auto}
+  #terms::-webkit-scrollbar,#profile::-webkit-scrollbar{width:8px}
+  #terms::-webkit-scrollbar-thumb,#profile::-webkit-scrollbar-thumb{background:#d8dce2;border-radius:4px}
+
+  /* ---- profile ---- */
+  .kv{display:grid;grid-template-columns:76px 1fr;gap:6px 12px;font-size:13px;margin-bottom:12px}
+  .kv dt{color:var(--muted);font-size:12px}
+  .kv dd{margin:0}
+  .badge{font-size:10.5px;padding:1px 7px;border-radius:99px;font-family:var(--mono)}
+  .badge.llm{background:var(--accent-soft);color:var(--accent)}
+  .badge.stat{background:var(--warn-soft);color:var(--warn)}
+  .phr{font-size:12.5px;padding:6px 10px;background:#fbfbfc;border-left:2px solid var(--line-strong);
+    border-radius:0 6px 6px 0;margin-bottom:6px;color:#333}
+
+  /* ---- ask ---- */
+  .askbar{display:flex;gap:8px;align-items:stretch}
+  .askbar input[type=text]{
+    flex:1;border:1px solid var(--line-strong);border-radius:8px;padding:9px 12px;font-size:13.5px;
+    font-family:inherit;outline:none;transition:.12s;
+  }
+  .askbar input[type=text]:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .askbar select,.askbar input[type=number]{
+    border:1px solid var(--line-strong);border-radius:8px;padding:0 8px;font-size:12.5px;
+    font-family:inherit;background:#fff;color:var(--ink)
+  }
+  .answer{margin-top:16px}
+  .answer .text{font-size:14px;line-height:1.78;white-space:pre-wrap}
+  .banner{padding:9px 12px;border-radius:8px;font-size:12.5px;margin-bottom:10px}
+  .banner.deny{background:var(--warn-soft);color:var(--warn)}
+  .banner.bad{background:var(--bad-soft);color:var(--bad)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .chip{font-family:var(--mono);font-size:11px;padding:2px 7px;border-radius:5px;
+    background:var(--accent-soft);color:var(--accent)}
+  .chip.bad{background:var(--bad-soft);color:var(--bad)}
+  .meta-line{color:var(--muted);font-size:11.5px;font-family:var(--mono);margin-top:10px;
+    display:flex;gap:14px;flex-wrap:wrap}
+  .ev{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fcfcfd}
+  .ev .hd{font-family:var(--mono);font-size:11px;color:var(--accent);margin-bottom:5px;display:flex;gap:8px}
+  .ev .hd .t{color:var(--muted);font-family:inherit;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ev .bd{font-size:12px;color:#3c4048;line-height:1.65;white-space:pre-wrap;max-height:150px;overflow:auto}
+
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line-strong);
+    border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .toast{position:fixed;right:20px;bottom:20px;background:#15181d;color:#fff;padding:10px 14px;
+    border-radius:8px;font-size:12.5px;opacity:0;transform:translateY(8px);transition:.2s;z-index:99;max-width:420px}
+  .toast.show{opacity:1;transform:none}
+  .toast.err{background:var(--bad)}
+</style>
+</head>
+<body>
+<header>
+  <h1>资料问答工作台</h1>
+  <span class="sub">上传资料 → 解析 → 术语与领域画像 → 带出处的问答</span>
+  <span class="grow"></span>
+  <span class="sub"><span id="dot" class="dot"></span><span id="health">检测中…</span></span>
+</header>
+
+<main>
+  <!-- ============ 左：资料库 ============ -->
+  <section class="card" style="align-self:start">
+    <h2>资料库<span class="count" id="docCount">0</span></h2>
+    <div class="body">
+      <div class="drop" id="drop">
+        <b>点击或拖入文件</b>
+        <span>PDF / TXT / MD，单个 ≤ 50 MB</span>
+        <input type="file" id="file" accept=".pdf,.txt,.md" hidden />
+      </div>
+      <div class="hint">
+        中文资料直接检索（字二元组），英文资料自动加"中文问题→英文关键词"翻译。<br />
+        扫描件（无文本层）会被拒绝，需要先做 OCR。
+      </div>
+      <div class="docs" id="docs" style="margin-top:14px"></div>
+    </div>
+  </section>
+
+  <!-- ============ 右：工作区 ============ -->
+  <section style="display:flex;flex-direction:column;gap:18px;min-width:0">
+    <div class="card">
+      <h2>术语表<span class="count" id="termCount"></span></h2>
+      <div class="body" id="terms"><div class="empty">先上传或选择一份资料。</div></div>
+    </div>
+
+    <div class="card">
+      <h2>领域画像
+        <span id="profBadge"></span>
+        <span class="count" style="margin-left:auto">
+          <button class="act" id="buildProfile" disabled>生成画像</button>
+        </span>
+      </h2>
+      <div class="body" id="profile"><div class="empty">画像由"候选术语 + 模型筛选 + 机械校验"生成；未生成时问答仍可用，只是没有领域措辞注入。</div></div>
+    </div>
+
+    <div class="card">
+      <h2>提问</h2>
+      <div class="body">
+        <div class="askbar">
+          <input type="text" id="q" placeholder="例如：主成分分析里方差贡献率怎么算？" />
+          <select id="scope"><option value="">全部资料</option></select>
+          <input type="number" id="topk" value="5" min="1" max="10" style="width:58px" title="top_k" />
+          <button class="act primary" id="askBtn">提问</button>
+        </div>
+        <div id="answerBox"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let docs = [];
+let current = null;
+
+function toast(msg, err){
+  const el = $("#toast");
+  el.textContent = msg;
+  el.className = "toast show" + (err ? " err" : "");
+  clearTimeout(el._t);
+  el._t = setTimeout(() => el.className = "toast", err ? 5200 : 2600);
+}
+
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  let data = null;
+  try { data = await r.json(); } catch(e) {}
+  if(!r.ok){
+    const e = data && data.error ? data.error : {message: `HTTP ${r.status}`, hint: ""};
+    throw e;
+  }
+  return data;
+}
+
+async function health(){
+  try{
+    const h = await api("/api/health");
+    $("#dot").className = "dot";
+    $("#health").textContent = `${h.model} · ${h.docs} 份资料`;
+  }catch(e){
+    $("#dot").className = "dot off";
+    $("#health").textContent = "服务未就绪";
+  }
+}
+
+/* ------------------------------- 文档列表 ------------------------------- */
+function renderDocs(){
+  const box = $("#docs");
+  $("#docCount").textContent = docs.length;
+  $("#scope").innerHTML = '<option value="">全部资料</option>' +
+    docs.map(d => `<option value="${esc(d.doc_id)}">${esc(d.filename)}</option>`).join("");
+  if(!docs.length){ box.innerHTML = '<div class="empty">还没有资料。上传后这里会出现卡片。</div>'; return; }
+  box.innerHTML = docs.map(d => `
+    <div class="doc ${current===d.doc_id?"active":""}" data-id="${esc(d.doc_id)}">
+      <button class="del" data-del="${esc(d.doc_id)}" title="删除">×</button>
+      <div class="name">${esc(d.filename)}</div>
+      <div class="meta">${esc(d.doc_id)} · ${d.pages}p · ${d.chars} 字 · ${d.chunks} 块</div>
+      <div class="tags">
+        <span class="tag ${d.lang==="zh"?"zh":(d.lang==="en"?"en":"")}">${d.lang}</span>
+        ${d.has_profile ? '<span class="tag prof">已生成画像</span>' : ''}
+        <span class="tag">${esc((d.uploaded_at||"").replace("T"," ").slice(5,16))}</span>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll(".doc").forEach(el => {
+    el.onclick = (ev) => {
+      if(ev.target.dataset.del) return;
+      select(el.dataset.id);
+    };
+  });
+  box.querySelectorAll("[data-del]").forEach(btn => {
+    btn.onclick = async (ev) => {
+      ev.stopPropagation();
+      const id = btn.dataset.del;
+      if(!confirm(`删除 ${id}？文件、块和画像都会被删掉。`)) return;
+      try{
+        await api(`/api/docs/${id}`, {method:"DELETE"});
+        if(current === id) current = null;
+        await loadDocs();
+        $("#terms").innerHTML = '<div class="empty">先上传或选择一份资料。</div>';
+        $("#profile").innerHTML = "";
+        toast("已删除");
+      }catch(e){ toast(e.message, true); }
+    };
+  });
+}
+
+async function loadDocs(){
+  const d = await api("/api/docs");
+  docs = d.docs || [];
+  renderDocs();
+}
+
+/* ------------------------------- 术语表 ------------------------------- */
+async function select(id){
+  current = id;
+  // 地址栏带上 doc_id：#notes。刷新页面能直接回到这份资料，也方便把链接发给别人。
+  if(id) history.replaceState(null, "", "#" + encodeURIComponent(id));
+  renderDocs();
+  $("#buildProfile").disabled = !id;
+  const doc = docs.find(d => d.doc_id === id);
+  $("#terms").innerHTML = '<div class="empty"><span class="spin"></span>抽取术语…</div>';
+  try{
+    const t = await api(`/api/docs/${id}/terms?top_n=20`);
+    $("#termCount").textContent = `${t.terms.length} 条 · 统计层`;
+    $("#terms").innerHTML = t.terms.length ? t.terms.map(x => `
+      <div class="term-row">
+        <div>
+          <div class="term-name">${esc(x.term)}<em>${x.freq}×</em></div>
+          <div class="pages">${x.pages.map(p => `<span class="page">${esc(p)}</span>`).join("")}</div>
+        </div>
+        <div class="term-ctx">${esc(x.evidence)}</div>
+      </div>`).join("") : '<div class="empty">没抽到候选：资料太短，或正文里汉字太少。</div>';
+  }catch(e){
+    $("#terms").innerHTML = `<div class="empty">${esc(e.message)}</div>`;
+  }
+  loadProfile(id);
+}
+
+/* ------------------------------- 画像 ------------------------------- */
+function renderProfile(p){
+  if(!p){
+    $("#profBadge").innerHTML = "";
+    $("#profile").innerHTML = '<div class="empty">还没生成。点右上「生成画像」，会从候选里挑术语并校验出处。</div>';
+    return;
+  }
+  const badge = p.source === "llm"
+    ? '<span class="badge llm">模型筛选</span>'
+    : '<span class="badge stat">纯统计（未调模型）</span>';
+  $("#profBadge").innerHTML = badge;
+  const rejected = (p.rejected||[]);
+  const dropped = (p.notes_dropped||[]);
+  const fallback = p.source !== "llm" && p.fallback_reason
+    ? `<div class="banner deny" style="margin-top:12px">模型这一步没有成功，已退回纯统计画像：<code>${esc(p.fallback_reason)}</code><br>
+       候选术语仍然带页码和原文片段，可以直接用；想重试请再点一次「生成画像」。</div>` : "";
+  const warn = rejected.length || dropped.length
+    ? `<div class="banner ${rejected.length ? "bad" : "deny"}" style="margin-top:12px">
+         ${rejected.length ? `丢弃了 ${rejected.length} 个"原文里找不到"的术语：<code>${esc(rejected.join("、"))}</code><br>` : ""}
+         ${dropped.length ? `丢弃了 ${dropped.length} 条"数字对不上原文"的说明：<code>${esc(dropped.join("、"))}</code>` : ""}
+       </div>` : "";
+
+  $("#profile").innerHTML = `
+    <dl class="kv">
+      <dt>领域</dt><dd>${esc(p.domain || "—")}</dd>
+      <dt>概括</dt><dd>${esc(p.summary || "—")}</dd>
+      <dt>术语</dt><dd>${p.terms.length} 条（全部逐字回原文校验）</dd>
+    </dl>
+    ${p.terms.length ? p.terms.map(t => `
+      <div class="term-row">
+        <div>
+          <div class="term-name">${esc(t.term)}<em>${t.freq}×</em></div>
+          <div class="pages">${t.pages.map(x => `<span class="page">${esc(x)}</span>`).join("")}</div>
+        </div>
+        <div class="term-ctx">${esc(t.note || t.evidence)}</div>
+      </div>`).join("") : '<div class="empty">模型没有挑出任何可通过校验的术语。</div>'}
+    ${p.phrasings && p.phrasings.length ? `<div style="margin-top:14px">
+      <div class="term-ctx" style="margin-bottom:6px">资料里可能怎么问：</div>
+      ${p.phrasings.map(x => `<div class="phr">${esc(x.question)}</div>`).join("")}
+    </div>` : ""}
+    ${warn}
+    ${fallback}`;
+}
+
+async function loadProfile(id){
+  try{
+    const d = await api(`/api/docs/${id}/profile`);
+    renderProfile(d.profile);
+    $("#buildProfile").disabled = false;
+  }catch(e){ $("#profile").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}
+
+$("#buildProfile").onclick = async () => {
+  if(!current) return;
+  const btn = $("#buildProfile");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>生成中';
+  try{
+    const d = await api(`/api/docs/${current}/profile`, {method:"POST"});
+    renderProfile(d.profile);
+    await loadDocs();
+    toast(d.profile.source === "llm" ? "画像已生成" : "模型不可用，已退回纯统计画像");
+  }catch(e){
+    toast(`${e.message}${e.hint ? " — " + e.hint : ""}`, true);
+  }finally{
+    btn.disabled = false; btn.innerHTML = "生成画像";
+  }
+};
+
+/* ------------------------------- 上传 ------------------------------- */
+const drop = $("#drop"), fileInput = $("#file");
+drop.onclick = () => fileInput.click();
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => { if(e.dataTransfer.files.length) upload(e.dataTransfer.files[0]); });
+fileInput.onchange = () => { if(fileInput.files.length) upload(fileInput.files[0]); fileInput.value = ""; };
+
+async function upload(f){
+  const fd = new FormData();
+  fd.append("file", f, f.name);
+  drop.innerHTML = '<b><span class="spin"></span>解析中…</b><span>大文件需要几秒</span><input type="file" id="file" accept=".pdf,.txt,.md" hidden />';
+  try{
+    const r = await api("/api/docs", {method:"POST", body:fd});
+    await loadDocs();
+    await select(r.doc.doc_id);
+    toast(`已解析 ${r.doc.filename}：${r.doc.pages} 页 / ${r.doc.chunks} 块 / ${r.doc.lang}`);
+  }catch(e){
+    toast(`${e.message}${e.hint ? " — " + e.hint : ""}`, true);
+  }finally{
+    drop.innerHTML = '<b>点击或拖入文件</b><span>PDF / TXT / MD，单个 ≤ 50 MB</span><input type="file" id="file" accept=".pdf,.txt,.md" hidden />';
+    const fi = $("#file");
+    drop.onclick = () => fi.click();
+    fi.onchange = () => { if(fi.files.length) upload(fi.files[0]); fi.value = ""; };
+  }
+}
+
+/* ------------------------------- 提问 ------------------------------- */
+$("#askBtn").onclick = ask;
+$("#q").addEventListener("keydown", e => { if(e.key === "Enter") ask(); });
+
+async function ask(){
+  const q = $("#q").value.trim();
+  if(!q) { toast("先写一个问题"); return; }
+  const btn = $("#askBtn");
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>检索中';
+  $("#answerBox").innerHTML = '<div class="answer"><div class="empty"><span class="spin"></span>检索 → 拼上下文 → 调用模型…</div></div>';
+  const body = {
+    question: q,
+    doc_ids: $("#scope").value ? [$("#scope").value] : null,
+    top_k: parseInt($("#topk").value || "5", 10),
+  };
+  try{
+    const r = await api("/api/ask", {
+      method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body)
+    });
+    renderAnswer(r);
+  }catch(e){
+    $("#answerBox").innerHTML = `<div class="answer"><div class="banner bad">${esc(e.message)}${e.hint ? "<br>" + esc(e.hint) : ""}</div></div>`;
+  }finally{
+    btn.disabled = false; btn.textContent = "提问";
+  }
+}
+
+function renderAnswer(r){
+  const denied = r.denied;
+  const bad = (r.unsupported || []).length;
+  const banner = denied
+    ? `<div class="banner deny">资料里没有足够依据（模型回答"资料未覆盖"或检索无结果）。这不是失败，是拒答。</div>`
+    : (bad ? `<div class="banner bad">${bad} 个引用指向本次没有检索到的页，疑似编造出处：${esc(r.unsupported.join("、"))}</div>` : "");
+  const cites = (r.citations || []).map(c =>
+    `<span class="chip ${(r.unsupported||[]).includes(c) ? "bad" : ""}">${esc(c)}</span>`).join("");
+  const ev = (r.evidence || []).map(e => `
+    <div class="ev">
+      <div class="hd"><span>${esc(e.source)}</span><span>·</span><span>${e.score}</span><span class="t">${esc(e.title || "")}</span></div>
+      <div class="bd">${esc(e.text)}</div>
+    </div>`).join("");
+  const meta = [
+    `${r.latency_ms.toFixed(0)} ms`,
+    r.cost_cny ? `¥${r.cost_cny.toFixed(4)}` : "",
+    `top_k=${r.top_k}`,
+    r.translated ? "已翻译检索词" : "直接检索",
+    r.profile_source ? `画像=${r.profile_source}` : "无画像",
+    (r.expanded_terms||[]).length ? `扩展词=${r.expanded_terms.join("/")}` : "",
+  ].filter(Boolean).map(x => `<span>${esc(x)}</span>`).join("");
+
+  $("#answerBox").innerHTML = `
+    <div class="answer">
+      ${banner}
+      <div class="text">${esc(r.answer)}</div>
+      ${cites ? `<div class="chips">${cites}</div>` : ""}
+      <div class="meta-line">${meta}</div>
+      ${ev ? `<div style="margin-top:16px">
+        <div class="term-ctx" style="margin-bottom:8px">检索依据（按相关度）</div>${ev}
+      </div>` : ""}
+    </div>`;
+}
+
+/* ------------------------------- 启动 ------------------------------- */
+(async function init(){
+  await health();
+  try{
+    await loadDocs();
+    const want = decodeURIComponent(location.hash.replace(/^#/, ""));
+    if(want && docs.some(d => d.doc_id === want)) await select(want);
+    else if(docs.length === 1) await select(docs[0].doc_id);
+    // ?q=... 直接提问：方便把"这份资料 + 这个问题"做成一条可分享的链接
+    const autoQ = new URLSearchParams(location.search).get("q");
+    if(autoQ){ $("#q").value = autoQ; await ask(); }
+  }catch(e){ toast(e.message, true); }
+})();
+</script>
+</body>
+</html>

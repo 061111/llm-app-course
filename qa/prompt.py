@@ -29,7 +29,12 @@
 """
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from retrieval.search import SearchResult
+
+if TYPE_CHECKING:  # 只为类型检查；运行时导入会形成 qa → studio → qa 的环
+    from studio.profile import DomainProfile
 
 SYSTEM = (
     "你是数据挖掘课程的助教，只根据用户提供的讲义片段回答。"
@@ -45,6 +50,20 @@ INSTRUCTIONS = """你是助教。请**只**根据下面的讲义片段回答问�
 3. 如果片段之间说法冲突，明确指出冲突，不要挑一个当结论。
 4. 用中文回答。先给结论，再给依据，不要超过 200 字。
 """
+
+
+def system_for(profile: "DomainProfile | None" = None) -> str:
+    """有领域画像时换一句 system：把"数据挖掘课程的助教"换成这份资料的助教。
+
+    为什么值得改：用户传的可能是医学指南或合同。继续自称"数据挖掘助教"，
+    模型会倾向于把内容往数据挖掘上解释 —— 这是**领域漂移**，比答错更难发现。
+    """
+    if profile is None or not getattr(profile, "domain", ""):
+        return SYSTEM
+    return (
+        f"你是《{profile.domain}》这份资料的助教，只根据用户提供的资料片段回答。"
+        "你不使用任何外部知识，也不猜测。"
+    )
 
 
 def build_context(results: list[SearchResult], *, max_chars: int = 6000) -> str:
@@ -65,11 +84,45 @@ def build_context(results: list[SearchResult], *, max_chars: int = 6000) -> str:
     return "\n\n".join(parts)
 
 
-def build_prompt(question: str, results: list[SearchResult], *, max_chars: int = 6000) -> str:
+def build_prompt(
+    question: str,
+    results: list[SearchResult],
+    *,
+    max_chars: int = 6000,
+    profile: "DomainProfile | None" = None,
+) -> str:
+    """拼 prompt。profile 为 None 时走的仍是 M4 的原路径，一个字没改。
+
+    有画像时（上传资料场景）改三处措辞：
+      1. "讲义" → "资料"，"讲义未覆盖" → "资料未覆盖"（用户传的不是讲义）；
+      2. 插入领域与术语块（用词一致性，见 studio/profile.py 的 prompt_block）；
+      3. 保留全部硬规则 —— 引用格式、拒答、冲突声明一条都不放松。
+    """
     context = build_context(results, max_chars=max_chars)
+
+    if profile is None:
+        return (
+            f"{INSTRUCTIONS}\n"
+            f"=== 讲义片段（共 {len(results)} 段，按相关度从高到低）===\n"
+            f"{context}\n"
+            f"=== 片段结束 ===\n\n"
+            f"问题：{question}"
+        )
+
+    block = profile.prompt_block()
+    scope_rules = """你是助教。请**只**根据下面的资料片段回答问题。
+
+规则：
+1. 只使用片段里的内容。片段里没有的信息，直接回答"资料未覆盖"，不要补充你的先验知识。
+2. 每个结论后面标注出处，格式**必须**是【doc_id:p页码】，例如【u001:p3】。
+   页码用片段头里给出的那个；跨页时写成【u001:p12-13】。
+3. 如果片段之间说法冲突，明确指出冲突，不要挑一个当结论。
+4. 用中文回答。先给结论，再给依据，不要超过 200 字。
+"""
     return (
-        f"{INSTRUCTIONS}\n"
-        f"=== 讲义片段（共 {len(results)} 段，按相关度从高到低）===\n"
+        f"{scope_rules}\n"
+        + (f"{block}\n\n" if block else "")
+        + f"=== 资料片段（共 {len(results)} 段，按相关度从高到低）===\n"
         f"{context}\n"
         f"=== 片段结束 ===\n\n"
         f"问题：{question}"

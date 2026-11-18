@@ -18,13 +18,17 @@
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from llmkit.client import ask
 from llmkit.types import AskOptions, Usage
-from qa.prompt import SYSTEM, build_prompt
+from qa.prompt import build_prompt, system_for
 from retrieval.search import SearchResult, Searcher
+
+if TYPE_CHECKING:  # 运行时导入会形成 qa → studio → qa 的环
+    from studio.profile import DomainProfile
 
 # 【chap03:p70】或【chap03:p12-13】。只认这种格式：它是 prompt 里规定死的，
 # 认死了才能机械核对；放宽成"第 70 页"之类，解析会立刻变得不可靠。
@@ -65,8 +69,12 @@ class Answer(BaseModel):
 
     @property
     def claims_uncovered(self) -> bool:
-        """模型是否自己承认"讲义未覆盖"。评估时要和"答错"分开统计。"""
-        return "讲义未覆盖" in self.text
+        """模型是否自己承认"资料里没有"。
+
+        评估时要和"答错"分开统计。两种说法都认：课程语料里叫"讲义"，
+        用户上传的资料里叫"资料"（prompt 会跟着场景换词，见 qa/prompt.py）。
+        """
+        return "讲义未覆盖" in self.text or "资料未覆盖" in self.text
 
 
 def parse_citations(text: str) -> tuple[CitationRef, ...]:
@@ -128,17 +136,26 @@ def answer_question(
     settings=None,
     client=None,
     max_chars: int = 6000,
+    translate: bool = True,
+    profile: "DomainProfile | None" = None,
+    results: list[SearchResult] | None = None,
 ) -> Answer:
     """完整走一遍：检索 → 拼 prompt → 调用 → 解析。
 
     settings / client 是给测试的注入点（和 M1 的 ask 一致）：
     不给就真调用，给了就能用假客户端跑到同一个校验路径。
+
+    M5 新增三个参数，默认值都保持 M4 的行为：
+      translate  中文资料不能翻译（见 studio/service.py 的说明）
+      profile    领域画像，注入术语与领域措辞
+      results    已经检索好的结果（服务层做了领域措辞扩展时传进来，避免重复检索）
     """
-    results = searcher.search(question, top_k=top_k, translate=True)
-    prompt = build_prompt(question, results, max_chars=max_chars)
+    if results is None:
+        results = searcher.search(question, top_k=top_k, translate=translate)
+    prompt = build_prompt(question, results, max_chars=max_chars, profile=profile)
     result = ask(
         prompt,
-        options=AskOptions(temperature=0.0, max_tokens=800, system=SYSTEM),
+        options=AskOptions(temperature=0.0, max_tokens=800, system=system_for(profile)),
         settings=settings,
         client=client,
     )

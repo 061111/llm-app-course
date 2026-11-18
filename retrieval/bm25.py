@@ -39,6 +39,8 @@ from collections import Counter
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from retrieval.cjk import CJK_RUN_RE, cjk_terms
+
 # 停用词：高频但几乎不携带区分度。
 # 不删干净也能跑，只是"the / of"会把所有块的分一起抬高，排序更钝。
 STOPWORDS = frozenset(
@@ -72,8 +74,8 @@ def normalize(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
-def tokenize(text: str) -> list[str]:
-    """字符归一化 + 小写化 + 抽词元 + 去停用词 + 丢掉单字母（数字除外）。
+def _latin_tokens(segment: str) -> list[str]:
+    """非汉字段的词元：原来的规则，一个字没改。
 
     单字母（k、n、v）在教材里是有意义的符号，但太短太常见，
     留着会让 "P(X|Y)" 这类公式页命中一堆无关块。
@@ -84,10 +86,31 @@ def tokenize(text: str) -> list[str]:
     实测保留后：hit@1 61%→67%，hit@5 89%→94%。
     """
     out: list[str] = []
-    for tok in TOKEN_RE.findall(normalize(text).lower()):
+    for tok in TOKEN_RE.findall(segment):
         if (len(tok) < 2 and not tok.isdigit()) or tok in STOPWORDS:
             continue
         out.append(tok)
+    return out
+
+
+def tokenize(text: str) -> list[str]:
+    """字符归一化 + 小写化 + 抽词元 + 去停用词。
+
+    **按语种分流**（M5 新增）：先把文本切成"连续汉字段"和"其他段"，
+    其他段走原来的 `_latin_tokens`，汉字段走 `cjk_terms`（二元组）。
+    这样英文语料的分词结果与改造前逐词相同 —— 既有 283 条测试不受影响。
+
+    为什么不能在原正则上打补丁：`[^\\W\\d_]+` 的 `\\w` 含汉字，
+    一整句中文会成为一个词元，与查询词一个都对不上（详见 retrieval/cjk.py）。
+    """
+    normalized = normalize(text).lower()
+    out: list[str] = []
+    pos = 0
+    for m in CJK_RUN_RE.finditer(normalized):
+        out.extend(_latin_tokens(normalized[pos : m.start()]))
+        out.extend(cjk_terms(m.group(0)))
+        pos = m.end()
+    out.extend(_latin_tokens(normalized[pos:]))
     return out
 
 
