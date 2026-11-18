@@ -21,7 +21,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
-from llmkit.errors import ConfigError
+from llmkit.errors import ConfigError, LLMError
 from studio.errors import StudioError
 from studio.library import MAX_UPLOAD_BYTES
 from studio.service import Studio
@@ -40,6 +40,26 @@ def create_app(studio: Studio | None = None) -> FastAPI:
     @app.exception_handler(StudioError)
     async def _studio_error(_request: Request, exc: StudioError) -> JSONResponse:
         return JSONResponse(status_code=exc.status, content={"error": exc.as_dict()})
+
+    @app.exception_handler(LLMError)
+    async def _llm_error(_request: Request, exc: LLMError) -> JSONResponse:
+        """模型侧失败也要有话说，不能掉成裸 500。
+
+        实测（2026-11-18）：账户余额不足时上游返回 402，异常是 `FatalError`，
+        没有处理器就变成 500 + 空响应，前端只能显示 HTTP 500。
+        这里把上游状态码翻译成"用户能行动"的提示：401/402/403 是账户问题（503），
+        其余（超时、5xx）是临时故障（502）。
+        """
+        status = 503 if exc.status in (401, 402, 403) else 502
+        hint = (
+            "检查 .env 里的 LLMKIT_API_KEY，以及账户余额/配额"
+            if status == 503
+            else "上游暂时不可用，稍后重试；连续失败先看服务端日志"
+        )
+        return JSONResponse(
+            status_code=status,
+            content={"error": {"code": "llm_error", "message": str(exc), "hint": hint}},
+        )
 
     @app.exception_handler(ConfigError)
     async def _config_error(_request: Request, exc: ConfigError) -> JSONResponse:
@@ -72,6 +92,28 @@ def create_app(studio: Studio | None = None) -> FastAPI:
             "docs": len(docs),
             "model": getattr(store.settings, "model", "") or "（未配置）",
             "base_url": getattr(store.settings, "base_url", "") or "",
+            "has_key": bool(getattr(store.settings, "api_key", "")),
+        }
+
+    # ------------------------------------------------------------ 模型
+
+    @app.get("/api/models")
+    def models(refresh: bool = False) -> dict:
+        """可选模型清单。
+
+        清单来自上游 `GET /models`（缓存 10 分钟），拿不到时降级成内置推荐表，
+        `source` 字段如实标注——前端据此提示"这份清单可能不是最新的"。
+        故意不抛异常：模型列表拉不到不该让整个界面打不开。
+        """
+        info = store.models(refresh=refresh)
+        return {
+            "current": info.current,
+            "base_url": info.base_url,
+            "source": info.source,
+            "note": info.note,
+            "checked_at": info.checked_at,
+            "recommended": [m.model_dump() for m in info.recommended],
+            "others": list(info.others),
         }
 
     # ------------------------------------------------------------ 文档
@@ -132,9 +174,30 @@ def create_app(studio: Studio | None = None) -> FastAPI:
         return {"doc_id": doc_id, "profile": profile.model_dump()}
 
     @app.post("/api/docs/{doc_id}/profile")
-    def build_profile(doc_id: str, refresh: bool = False) -> dict:
-        profile = store.profile(doc_id, refresh=refresh)
+    def build_profile(
+        doc_id: str, refresh: bool = False, model: str | None = None
+    ) -> dict:
+        profile = store.profile(doc_id, refresh=refresh, model=model)
         return {"doc_id": doc_id, "profile": profile.model_dump()}
+
+    # ------------------------------------------------------------ 自检
+
+    @app.post("/api/docs/{doc_id}/selfcheck")
+    def selfcheck(
+        doc_id: str,
+        n_terms: int = Query(default=5, ge=1, le=8),
+        n_negative: int = Query(default=3, ge=1, le=5),
+        model: str | None = None,
+    ) -> dict:
+        """领域无关自检：只判"引用对不对得上页""资料外的问题拒没拒"。
+
+        为什么是 POST：它会真的调模型、花钱（默认约 ¥0.03）。GET 带副作用
+        容易被浏览器预取、被爬虫点到，账单会莫名其妙涨。
+        """
+        report = store.selfcheck(
+            [doc_id], n_terms=n_terms, n_negative=n_negative, model=model
+        )
+        return {"doc_id": doc_id, **report.to_payload()}
 
     # ------------------------------------------------------------ 问答
 
@@ -144,12 +207,13 @@ def create_app(studio: Studio | None = None) -> FastAPI:
         doc_ids = payload.get("doc_ids") or None
         if isinstance(doc_ids, str):
             doc_ids = [doc_ids]
+        model = str(payload.get("model") or "").strip() or None
         top_k = int(payload.get("top_k", 5) or 5)
         if not 1 <= top_k <= 10:
             raise StudioError(
                 "top_k 必须在 1~10 之间", code="bad_top_k", status=400, hint="一般用 5"
             )
-        view = store.ask(question, doc_ids=doc_ids, top_k=top_k)
+        view = store.ask(question, doc_ids=doc_ids, top_k=top_k, model=model)
         return {
             "question": view.answer.question,
             "answer": view.answer.text,
@@ -158,6 +222,7 @@ def create_app(studio: Studio | None = None) -> FastAPI:
             "denied": view.denied,
             "doc_ids": list(view.doc_ids),
             "top_k": view.top_k,
+            "model": view.model,
             "translated": view.translated,
             "profile_source": view.profile_source,
             "expanded_terms": list(view.expanded_terms),

@@ -63,6 +63,19 @@
   }
   .card-hd h2{font-size:13.5px;margin:0;font-weight:650;letter-spacing:.1px}
   .card-hd .count{color:var(--muted);font-size:12px;font-family:var(--mono);margin-left:auto}
+  /* 模型选择器：放在提问卡头部而不是输入框旁边。
+     理由是它改的是"用谁回答"，不是"怎么检索"——和范围/条数不是一类东西，
+     挤进 askbar 会把那一行撑成两行。 */
+  .model-pick{
+    font:inherit;font-size:11.5px;font-family:var(--mono);line-height:1.2;
+    padding:4px 6px;border:1px solid var(--line);border-radius:7px;background:#fff;
+    color:var(--ink);max-width:186px;min-width:0;flex:0 0 auto;cursor:pointer;
+    transition:.15s;
+  }
+  .model-pick:hover{border-color:var(--line-strong)}
+  .model-pick:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  /* 清单来自降级路径（上游问不到）时用黄色示警：还能切，但可能不是最新的 */
+  .model-pick.warn{border-color:var(--warn);color:var(--warn);background:var(--warn-soft)}
   .card-bd{padding:14px 16px}
   .col-right{display:flex;flex-direction:column;gap:16px;min-width:0}
 
@@ -199,6 +212,29 @@
   .ref:hover{background:#e0eaff;border-color:#c7d7fe}
   .ref.bad{background:var(--bad-soft);color:var(--bad);text-decoration:line-through}
   .banner{padding:9px 12px;border-radius:9px;font-size:12.5px;line-height:1.65;margin-bottom:12px}
+  /* ---------------- 自检 ---------------- */
+  .check-intro{color:var(--muted);font-size:12.5px;line-height:1.7;margin:0 0 12px}
+  .metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:0 0 14px}
+  @media (max-width:720px){ .metrics{grid-template-columns:repeat(2,minmax(0,1fr))} }
+  .metric{border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-width:0}
+  .metric .v{font-size:19px;font-weight:650;font-family:var(--mono);line-height:1.2}
+  .metric .k{color:var(--muted);font-size:11.5px;margin-top:3px;line-height:1.4}
+  .metric .s{color:var(--muted);font-size:11px;margin-top:2px;font-family:var(--mono)}
+  .metric.good .v{color:var(--ok)} .metric.warn .v{color:var(--warn)} .metric.bad .v{color:var(--bad)}
+  .verdict{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:99px;font-weight:600}
+  .verdict.ok{background:var(--ok-soft);color:var(--ok)}
+  .verdict.warn{background:var(--warn-soft);color:var(--warn)}
+  .verdict.bad{background:var(--bad-soft);color:var(--bad)}
+  .check-group{margin-top:14px}
+  .check-group h3{font-size:12px;color:var(--muted);font-weight:600;margin:0 0 2px}
+  .check-item{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:12.5px;align-items:start}
+  .check-item:last-child{border-bottom:0}
+  .check-item .subj{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .check-item .det{color:var(--muted);line-height:1.55;margin-top:1px}
+  .oc{font-family:var(--mono);font-size:11px;padding:1px 6px;border-radius:99px;white-space:nowrap;text-align:center}
+  .oc.ok{background:var(--ok-soft);color:var(--ok)}
+  .oc.warn{background:var(--warn-soft);color:var(--warn)}
+  .oc.bad{background:var(--bad-soft);color:var(--bad)}
   .banner.deny{background:var(--warn-soft);color:var(--warn)}
   .banner.bad{background:var(--bad-soft);color:var(--bad)}
   .banner code{font-family:var(--mono);font-size:11.5px;background:rgba(0,0,0,.04);padding:1px 4px;border-radius:3px}
@@ -244,6 +280,9 @@
     header h1{font-size:15px}
     main{padding:12px 12px 52px;gap:12px}
     .card-hd{padding:11px 13px;min-height:46px}
+    /* 窄屏下模型名会和"仅在 u001 内检索"抢位置，让它整行独占 */
+    .ask-hd{flex-wrap:wrap;row-gap:8px}
+    .ask-hd .model-pick{flex:1 1 100%;max-width:none;order:3}
     .card-bd{padding:12px 13px}
     .term-row{grid-template-columns:1fr;gap:5px}
     .term-ctx{-webkit-line-clamp:3}
@@ -303,9 +342,10 @@
   <!-- ============ 右：提问 + 资料分析 ============ -->
   <div class="col-right">
     <section class="card">
-      <div class="card-hd">
+      <div class="card-hd ask-hd">
         <h2>提问</h2>
         <span class="count" id="askHint"></span>
+        <select id="model" class="model-pick" aria-label="回答模型"></select>
       </div>
       <div class="card-bd">
         <div class="askbar">
@@ -328,6 +368,7 @@
         <div class="tabs" role="tablist">
           <button class="tab active" data-tab="terms" role="tab" aria-selected="true">关键术语</button>
           <button class="tab" data-tab="profile" role="tab" aria-selected="false">领域画像</button>
+          <button class="tab" data-tab="check" role="tab" aria-selected="false">自检</button>
         </div>
         <span id="profBadge"></span>
         <span class="count" style="margin-left:auto">
@@ -337,6 +378,7 @@
       <div class="card-bd">
         <div class="panel" id="panel-terms"></div>
         <div class="panel hide" id="panel-profile"></div>
+        <div class="panel hide" id="panel-check"></div>
       </div>
     </section>
   </div>
@@ -360,7 +402,12 @@ const trimCtx = (s) => {
 let docs = [];
 let current = null;
 let lastFile = null;
-let busy = {upload:false, ask:false, profile:false};
+let busy = {upload:false, ask:false, profile:false, check:false};
+// 模型相关：MODELS 是服务端给的清单，model 是用户当前选的。
+// 两者分开存——清单可能拉不到（MODELS 为 null），但选过的模型名要记住。
+let MODELS = null;
+let model = "";
+const MODEL_KEY = "llm.model.pick";
 
 /* ------------------------------- 基础 ------------------------------- */
 function toast(msg, err){
@@ -386,11 +433,20 @@ async function api(path, opts){
   return data;
 }
 
+let HEALTH = null;
+
+function updateHealthLabel(){
+  if(!HEALTH) return;
+  // 显示"当前真正会用的模型"：用户选过就用选的那个，否则用服务端默认。
+  const m = model || HEALTH.model;
+  $("#health").textContent = `${m} · ${HEALTH.docs} 份资料`;
+}
+
 async function health(){
   try{
-    const h = await api("/api/health");
+    HEALTH = await api("/api/health");
     $("#dot").className = "dot";
-    $("#health").textContent = `${h.model} · ${h.docs} 份资料`;
+    updateHealthLabel();
     return true;
   }catch(e){
     $("#dot").className = "dot off";
@@ -398,6 +454,79 @@ async function health(){
     return false;
   }
 }
+
+/* ------------------------------- 模型选择 ------------------------------- */
+// localStorage 在隐私模式/被禁用时会直接抛异常，不能让它把整个初始化打断。
+function storedModel(){
+  try{ return localStorage.getItem(MODEL_KEY) || ""; }catch(e){ return ""; }
+}
+function rememberModel(v){
+  try{ localStorage.setItem(MODEL_KEY, v); }catch(e){}
+}
+
+function modelNote(id){
+  if(!MODELS) return "";
+  const hit = (MODELS.recommended || []).find(m => m.id === id);
+  return hit ? hit.note : "";
+}
+
+async function loadModels(){
+  try{
+    MODELS = await api("/api/models");
+  }catch(e){
+    MODELS = null;   // 拉不到就不显示选择器：宁可不给选，也不要给一个假的清单
+    $("#model").style.display = "none";
+    return;
+  }
+  renderModelPicker();
+}
+
+function renderModelPicker(){
+  const sel = $("#model");
+  if(!sel) return;
+  if(!MODELS){ sel.style.display = "none"; return; }
+
+  const recs = MODELS.recommended || [];
+  const others = MODELS.others || [];
+  const known = new Set([...recs.map(m => m.id), ...others]);
+
+  // 优先级：上次选的 > 服务端默认 > 推荐表第一个。
+  // 上次选的必须校验还在清单里——换了服务商之后旧的模型名会失效，
+  // 直接把它塞进 select 会变成一个"选了就报错"的选项。
+  const saved = storedModel();
+  model = known.has(saved)
+    ? saved
+    : (known.has(MODELS.current) ? MODELS.current : (recs[0] || {}).id || others[0] || "");
+
+  const group = (label, items, withNote) => items.length ? `<optgroup label="${esc(label)}">` +
+    items.map(m => {
+      const id = withNote ? m.id : m;
+      const tail = withNote ? (m.reasoning ? " · 推理型" : "") : "";
+      const title = withNote ? m.note : "";
+      return `<option value="${esc(id)}"${title ? ` title="${esc(title)}"` : ""}>${esc(id)}${tail}</option>`;
+    }).join("") + "</optgroup>" : "";
+
+  sel.innerHTML =
+    group("推荐", recs, true) +
+    group(`全部聊天模型（${others.length}）`, others, false) +
+    // 兜底：默认模型既不在推荐里也不在 others 里（配置写错了），也要能显示出来
+    (!known.has(model) && model ? `<option value="${esc(model)}">${esc(model)}（不在清单里）</option>` : "");
+
+  sel.value = model;
+  sel.classList.toggle("warn", MODELS.source !== "upstream");
+  sel.title = MODELS.source !== "upstream"
+    ? (MODELS.note || "模型清单可能不是最新的，但仍然可以切换")
+    : `换模型只影响之后的提问；服务端默认是 ${MODELS.current}`;
+  updateHealthLabel();
+}
+
+$("#model").addEventListener("change", (e) => {
+  model = e.target.value;
+  rememberModel(model);
+  const note = modelNote(model);
+  toast(`之后的问题由 ${model} 回答${note ? "（" + note + "）" : ""}`);
+  updateHealthLabel();
+});
 setInterval(() => { if(!document.hidden) health(); }, 15000);
 
 /* ------------------------------- 文档列表 ------------------------------- */
@@ -414,7 +543,7 @@ function renderDocs(){
     return;
   }
   $("#askBtn").disabled = false;
-  $("#askHint").textContent = current ? `仅在 ${esc(current)} 内检索` : "在全部资料内检索";
+  $("#askHint").textContent = current ? `仅在 ${current} 内检索` : "在全部资料内检索";
   box.innerHTML = docs.map(d => `
     <div class="doc ${current===d.doc_id?"active":""}" data-id="${esc(d.doc_id)}">
       <button class="del" data-del="${esc(d.doc_id)}" title="删除这份资料" aria-label="删除 ${esc(d.filename)}">×</button>
@@ -492,6 +621,7 @@ async function select(id){
     if(current !== id) return;
     box.innerHTML = `<p class="empty">${esc(e.message)}${e.hint ? "<br>" + esc(e.hint) : ""}</p>`;
   }
+  renderCheckShell();
   loadProfile(id);
 }
 
@@ -564,7 +694,7 @@ $("#buildProfile").onclick = async () => {
   btn.disabled = true; btn.innerHTML = '<span class="spin"></span>生成中';
   switchTab("profile");
   try{
-    const d = await api(`/api/docs/${current}/profile`, {method:"POST"});
+    const d = await api(`/api/docs/${current}/profile` + (model ? `?model=${encodeURIComponent(model)}` : ""), {method:"POST"});
     renderProfile(d.profile);
     await loadDocs();
     toast(d.profile.source === "llm"
@@ -578,6 +708,96 @@ $("#buildProfile").onclick = async () => {
   }
 };
 
+/* ------------------------------- 自检 ------------------------------- */
+// 结局 → 中文与配色。fabricated / no_hit / no_citation 是三种真问题，
+// refused 是好事（该拒的拒了），不能一律染红——否则用户会以为每次自检都失败。
+const OC_TEXT = {ok:"通过", partial:"部分", no_citation:"无出处", refused:"已拒答",
+                 fabricated:"编造", answered_without_citation:"无出处", no_hit:"未命中"};
+const OC_CLASS = {ok:"ok", partial:"warn", no_citation:"warn", refused:"ok",
+                  fabricated:"bad", answered_without_citation:"warn", no_hit:"bad"};
+
+function renderCheckShell(){
+  const box = $("#panel-check");
+  box.innerHTML = `
+    <p class="check-intro">自检<b>不判断“答得对不对”</b>——那需要标准答案，任何一份新资料都没有。
+      它只查四件能机械核实的事：引用标的页上<b>有没有那个词</b>、答案<b>有没有出处</b>、
+      拿一个文档里肯定不存在的随机串去问它<b>敢不敢编</b>、同一术语换三种问法<b>检索稳不稳</b>。
+      <br>默认问 5 个术语 + 3 个假问题，约 20 秒、¥0.07。</p>
+    <button class="act primary" id="runCheck" ${current ? "" : "disabled"}>开始自检</button>
+    <div id="checkResult"></div>`;
+  const btn = $("#runCheck");
+  if(btn) btn.onclick = runCheck;
+}
+
+function renderCheck(r){
+  const m = r.metrics || {};
+  const box = $("#checkResult");
+  if(!box) return;
+  const tone = r.verdict === "可溯源" ? "ok" : (r.verdict === "有风险" ? "bad" : "warn");
+  const pct = v => (v === null || v === undefined) ? "—" : Math.round(v * 100) + "%";
+  const grade = (v, good, bad) => v === null || v === undefined ? bad : (v >= good ? "good" : "warn");
+
+  const tiles = [
+    {k:"引用可核验", v: m.citation_verified === null ? "—" : pct(m.citation_verified),
+     s:`${m.citations_ok}/${m.citations_total} 条引用`, tone: m.citation_verified === null ? "bad" : grade(m.citation_verified, 0.9, "bad")},
+    {k:"有据回答", v: pct(m.grounded), s:"答完有没有标出处", tone: grade(m.grounded, 0.8, "warn")},
+    {k:"资料外拒答", v: pct(m.refusal), s: m.fabricated ? `${m.fabricated} 次编造` : "没有编造",
+     tone: m.fabricated ? "bad" : grade(m.refusal, 0.9, "bad")},
+    {k:"检索稳定", v: pct(m.retrieval_stability), s:"三种问法的页码重合度", tone: grade(m.retrieval_stability, 0.6, "warn")},
+  ];
+
+  const groups = [
+    ["citation", "引用检查", "每条答案标的出处，那一页上有没有出现这个词"],
+    ["negative", "资料外问题", "随机串在文档里不存在，正确反应是拒答"],
+    ["stability", "检索稳定性", "同一术语三种问法，取回的证据是不是同一片"],
+  ];
+
+  box.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:16px 0 10px">
+      <span class="verdict ${tone}">${esc(r.verdict)}</span>
+      <span style="color:var(--muted);font-size:12px">${esc((r.items||[]).length)} 项检查 · ${esc(r.terms.join("、"))}${r.model ? " · " + esc(r.model) : ""}</span>
+    </div>
+    ${(r.verdict_reasons||[]).length ? `<div class="banner ${tone === "ok" ? "deny" : "bad"}">
+      ${r.verdict_reasons.map(x => esc(x)).join("<br>")}</div>` : ""}
+    <div class="metrics">
+      ${tiles.map(t => `<div class="metric ${t.tone}"><div class="v">${esc(t.v)}</div>
+        <div class="k">${esc(t.k)}</div><div class="s">${esc(t.s)}</div></div>`).join("")}
+    </div>
+    ${groups.map(([key, title, note]) => {
+      const rows = (r.items || []).filter(i => i.check === key);
+      if(!rows.length) return "";
+      return `<div class="check-group"><h3>${esc(title)}<span style="font-weight:400"> · ${esc(note)}</span></h3>
+        ${rows.map(i => `<div class="check-item">
+          <span class="oc ${OC_CLASS[i.outcome] || "warn"}">${esc(OC_TEXT[i.outcome] || i.outcome)}</span>
+          <div><div class="subj">${esc(i.subject)}</div><div class="det">${esc(i.detail)}</div></div>
+        </div>`).join("")}</div>`;
+    }).join("")}
+    <p class="panel-note" style="margin-top:12px">花费 ¥${Number(r.cost_cny||0).toFixed(4)} · 用时 ${Number(r.seconds||0).toFixed(1)} 秒 · ${esc((r.generated_at||"").replace("T"," "))}
+      <br>这些指标只证明“可溯源、该拒就拒、换问法不飘”，不证明内容全对。</p>`;
+}
+
+async function runCheck(){
+  if(!current || busy.check) return;
+  busy.check = true;
+  const btn = $("#runCheck");
+  const box = $("#checkResult");
+  if(btn){ btn.disabled = true; btn.innerHTML = '<span class="spin"></span>自检中（8 次模型调用）'; }
+  if(box) box.innerHTML = '<div class="empty"><span class="spin"></span>抽样术语 → 逐个提问 → 核对引用页 → 造 3 个假问题</div>';
+  try{
+    const r = await api(`/api/docs/${encodeURIComponent(current)}/selfcheck?n_terms=5&n_negative=3`
+      + (model ? `&model=${encodeURIComponent(model)}` : ""), {method:"POST"});
+    if(!$("#panel-check")) return;
+    renderCheck(r);
+    toast(`自检完成：${r.verdict}`);
+  }catch(e){
+    if(box) box.innerHTML = `<p class="empty">${esc(e.message)}${e.hint ? "<br>" + esc(e.hint) : ""}</p>`;
+    toast(`${e.message}${e.hint ? " — " + e.hint : ""}`, true);
+  }finally{
+    busy.check = false;
+    if(btn){ btn.disabled = false; btn.textContent = "重新自检"; }
+  }
+}
+
 /* ------------------------------- tab ------------------------------- */
 function switchTab(name){
   document.querySelectorAll(".tab").forEach(t => {
@@ -587,6 +807,7 @@ function switchTab(name){
   });
   $("#panel-terms").classList.toggle("hide", name !== "terms");
   $("#panel-profile").classList.toggle("hide", name !== "profile");
+  $("#panel-check").classList.toggle("hide", name !== "check");
 }
 document.querySelectorAll(".tab").forEach(t => {
   t.onclick = () => switchTab(t.dataset.tab);
@@ -742,6 +963,7 @@ function renderAnswer(r, scroll){
       <div class="bd">${esc(e.text)}</div>
     </div>`).join("");
   const meta = [
+    r.model ? `${r.model}` : "",
     `${Math.round(r.latency_ms)} ms`,
     r.cost_cny ? `¥${r.cost_cny.toFixed(4)}` : "",
     `${(r.doc_ids||[]).length || 1} 份资料 · 前 ${r.top_k} 条`,
@@ -800,6 +1022,8 @@ async function ask(auto){
     question: q,
     doc_ids: $("#scope").value ? [$("#scope").value] : null,
     top_k: Math.min(10, Math.max(1, parseInt($("#topk").value || "5", 10))),
+    // 空串表示"用服务端默认"，不要发 null 之外的东西——后端把空串当没指定
+    model: model || null,
   };
   try{
     const r = await api("/api/ask", {
@@ -819,9 +1043,11 @@ async function ask(auto){
 /* ------------------------------- 启动 ------------------------------- */
 (async function init(){
   const params = new URLSearchParams(location.search);
-  if(params.get("tab") === "profile") switchTab("profile");
+  const tab = params.get("tab");
+  if(tab && ["terms", "profile", "check"].includes(tab)) switchTab(tab);
   const ok = await health();
   if(!ok){ toast("连不上本地服务，先运行 python -m studio", true); }
+  await loadModels();
   try{
     await loadDocs();
   }catch(e){

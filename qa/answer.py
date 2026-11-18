@@ -54,6 +54,7 @@ class Answer(BaseModel):
 
     question: str
     text: str = Field(description="模型原文回答")
+    model: str = Field(default="", description="实际回答的模型名（切换模型后要能看出来）")
     citations: tuple[CitationRef, ...] = Field(description="答案里出现的所有出处")
     retrieved: tuple[str, ...] = Field(description="本次检索到的块 source，按排名")
     unsupported: tuple[str, ...] = Field(
@@ -139,6 +140,7 @@ def answer_question(
     translate: bool = True,
     profile: "DomainProfile | None" = None,
     results: list[SearchResult] | None = None,
+    max_tokens: int = 800,
 ) -> Answer:
     """完整走一遍：检索 → 拼 prompt → 调用 → 解析。
 
@@ -149,13 +151,18 @@ def answer_question(
       translate  中文资料不能翻译（见 studio/service.py 的说明）
       profile    领域画像，注入术语与领域措辞
       results    已经检索好的结果（服务层做了领域措辞扩展时传进来，避免重复检索）
+
+    M7 新增 max_tokens：推理型模型（先思考再答）会把思考的 token 和正文算进同一个池子，
+    800 的预算下正文直接为空。调用方按模型查 llmkit/catalog.py 的预算再传进来。
     """
     if results is None:
         results = searcher.search(question, top_k=top_k, translate=translate)
     prompt = build_prompt(question, results, max_chars=max_chars, profile=profile)
     result = ask(
         prompt,
-        options=AskOptions(temperature=0.0, max_tokens=800, system=system_for(profile)),
+        options=AskOptions(
+            temperature=0.0, max_tokens=max_tokens, system=system_for(profile)
+        ),
         settings=settings,
         client=client,
     )
@@ -163,6 +170,7 @@ def answer_question(
     return Answer(
         question=question,
         text=result.text,
+        model=result.model,
         citations=cites,
         retrieved=tuple(r.chunk.source() for r in results),
         unsupported=unsupported_citations(cites, results),

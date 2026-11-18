@@ -158,6 +158,29 @@ def test_空_choices_抛_FatalError():
         ask("问题", settings=SETTINGS, client=client, sleep=no_sleep)
 
 
+def test_空正文会重试():
+    """空正文不是"答得短"，是没答：必须重发，不能把空串当答案交给下游。
+
+    实测来源（2026-11-18）：deepseek-flash 把 max_tokens 全花在 reasoning_tokens 上时，
+    content 是空串、finish_reason=length。旧实现直接返回 ""，
+    评估里表现为"回答为空"，用户看到一片空白。
+    """
+    client = FakeClient([make_completion(""), make_completion("第二次答上了")])
+    result = ask("问题", settings=SETTINGS, client=client, sleep=no_sleep)
+
+    assert result.text == "第二次答上了"
+    assert result.attempts == 2
+    assert client.call_count == 2
+
+
+def test_一直空正文就如实报错():
+    client = FakeClient([make_completion(""), make_completion(""), make_completion("")])
+
+    with pytest.raises(RetryableError, match="空正文"):
+        ask("问题", settings=SETTINGS, client=client, sleep=no_sleep)
+    assert client.call_count == 3
+
+
 def test_ask_structured_第一次就合法():
     from pydantic import BaseModel
 

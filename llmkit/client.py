@@ -21,7 +21,7 @@ from openai import OpenAI
 from pydantic import BaseModel
 
 from llmkit.config import Settings
-from llmkit.errors import FatalError, LLMError, retry_call
+from llmkit.errors import FatalError, LLMError, RetryableError, retry_call
 from llmkit.obs import log_event, new_trace_id
 from llmkit.parsing import parse_with_repair, repair_prompt
 from llmkit.types import AskOptions, AskResult, Usage
@@ -113,12 +113,19 @@ def ask(
 
     def _once() -> object:
         calls["n"] += 1
-        return client.chat.completions.create(  # type: ignore[attr-defined]
+        resp = client.chat.completions.create(  # type: ignore[attr-defined]
             model=model,
             messages=_messages(prompt, opts.system),
             temperature=opts.temperature,
             max_tokens=opts.max_tokens,
         )
+        # 空正文不是"答了但很短"，是没答。实测（2026-11-18）：推理模型把
+        # max_tokens 全花在 reasoning_tokens 上时，content 就是空串、finish_reason=length。
+        # 以前这里静默返回 ""，下游把它当答案渲染出去，评估里表现为"回答为空"。
+        # 空正文按**可重试**处理：同一请求重发往往会正常返回；重试用尽后如实报错。
+        if not _text_of(resp).strip():
+            raise RetryableError("模型返回空正文（可能被 max_tokens 截断或推理 token 占满）")
+        return resp
 
     try:
         resp = retry_call(

@@ -40,6 +40,27 @@ def _studio(tmp_path: Path, answer: str = "系统聚类法先算距离矩阵。�
     )
 
 
+def _last_call(s: Studio) -> dict:
+    """最近一次请求的参数。问的是"实际发出去的请求长什么样"，
+    而不是"我们以为它会用哪个模型"——后者正是切模型最容易出错的地方。"""
+    calls = s.client.calls
+    assert calls, "一次模型调用都没发生"
+    return calls[-1]
+
+
+def calls_model(s: Studio) -> str:
+    """最近一次请求实际用的模型名。写进 Studio 里会污染被测代码，所以留在测试侧。"""
+    return s.client.calls[-1]["model"]
+
+
+def calls_max_tokens(s: Studio) -> int:
+    return s.client.calls[-1]["max_tokens"]
+
+
+Studio.calls_model = calls_model
+Studio.calls_max_tokens = calls_max_tokens
+
+
 def test_上传后能列出并抽到术语(tmp_path: Path):
     s = _studio(tmp_path)
     r = s.upload("notes.md", NOTES.encode("utf-8"))
@@ -203,3 +224,77 @@ def test_部分覆盖不算拒答(tmp_path: Path):
     s.upload("notes.md", NOTES.encode("utf-8"))
     view = s.ask("系统聚类法第一步")
     assert view.denied is False
+
+
+# ---------------------------------------------------------------- 模型切换
+
+
+def test_默认不指定模型时用配置里的那个(tmp_path: Path):
+    s = _studio(tmp_path)
+    s.upload("notes.md", NOTES.encode("utf-8"))
+    view = s.ask("系统聚类法第一步")
+
+    assert _last_call(s)["model"] == "fake-model"
+    assert view.model == "fake-model"
+
+
+def test_指定模型时请求真的换了模型(tmp_path: Path):
+    """这条测的是"别把 model 参数收下就丢掉"——
+    最容易犯的错是签名加了、调用链没透传，界面显示换了模型其实没换。"""
+    s = _studio(tmp_path)
+    s.upload("notes.md", NOTES.encode("utf-8"))
+    view = s.ask("系统聚类法第一步", model="qwen3.8-max")
+
+    assert _last_call(s)["model"] == "qwen3.8-max"
+    assert view.model == "qwen3.8-max"
+
+
+def test_推理型模型自动放大输出预算(tmp_path: Path):
+    """实测：deepseek-v4-pro 在 max_tokens=800 下正文为空（reasoning 吃满）。
+
+    如果这里不放大，用户在界面上选它，每个问题都会走"空正文重试三次"再失败，
+    看到的是"模型坏了"，而不是"这个模型要想一会儿"。
+    """
+    s = _studio(tmp_path)
+    s.upload("notes.md", NOTES.encode("utf-8"))
+    s.ask("系统聚类法第一步", model="deepseek-v4-pro")
+
+    assert _last_call(s)["max_tokens"] == 4000
+
+
+def test_非推理型模型沿用默认预算(tmp_path: Path):
+    s = _studio(tmp_path)
+    s.upload("notes.md", NOTES.encode("utf-8"))
+    s.ask("系统聚类法第一步", model="qwen3.8-flash")
+
+    assert _last_call(s)["max_tokens"] == 1600
+
+
+def test_切模型不改密钥和地址(tmp_path: Path):
+    """settings_for 必须是"复制一份改 model"，不能是"换掉整个配置"。
+    换掉的话密钥就丢了（表现为 401），而且很难看出跟切模型有关系。"""
+    s = _studio(tmp_path)
+    cfg = s.settings_for("qwen3.8-max")
+
+    assert cfg.model == "qwen3.8-max"
+    assert cfg.api_key == "test"
+    assert cfg.base_url == "http://fake"
+    assert s.settings.model == "fake-model"  # 原配置没被改
+
+
+def test_没有配置时切模型不会崩(tmp_path: Path):
+    s = Studio(tmp_path)
+    s.settings = None
+    assert s.settings_for("qwen3.8-max") is None
+
+
+def test_清单拉不到时降级而不是抛异常(tmp_path: Path):
+    """假客户端没有 models 接口，正好模拟"上游清单端点不可用"。"""
+    s = _studio(tmp_path)
+    info = s.models()
+
+    assert info.source == "fallback"
+    assert info.recommended
+
+
+# ---------------------------------------------------------------- 模型切换

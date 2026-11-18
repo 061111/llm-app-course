@@ -20,6 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from corpus.chunker import Chunk
 from retrieval.bm25 import BM25, index_text, tokenize
+from retrieval.cjk import has_cjk, strip_query_filler
 from retrieval.query import Translator
 
 
@@ -66,7 +67,10 @@ class Searcher:
         """
         tokens: list[str] = []
         for t in terms:
-            for tok in tokenize(t):
+            # 中文问句先剥掉"什么是/的定义是什么"这类提问套话，否则这些二元组
+            # 会和正文里的虚词大量撞车，把真正的术语挤出结果（见 cjk.strip_query_filler）。
+            probe = strip_query_filler(t) if has_cjk(t) else t
+            for tok in tokenize(probe):
                 if tok not in tokens:
                     tokens.append(tok)
         hits = self._index.search(tokens, top_k=top_k)

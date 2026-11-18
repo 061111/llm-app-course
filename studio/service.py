@@ -26,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from corpus.chunker import Chunk
 from corpus.parser import PageText
+from llmkit import catalog
 from qa.answer import Answer, answer_question
 from retrieval.search import SearchResult, Searcher
 from studio import library
@@ -39,6 +40,7 @@ from studio.profile import (
     profile_path,
     save_profile,
 )
+from studio.selfcheck import SelfCheckReport, run_selfcheck
 
 
 class DocView(BaseModel):
@@ -89,6 +91,7 @@ class AnswerView(BaseModel):
     doc_ids: tuple[str, ...]
     top_k: int
     translated: bool = Field(description="是否走了中文问题到英文关键词的翻译")
+    model: str = Field(default="", description="这条答案由哪个模型产出")
     profile_source: str = Field(default="", description="llm / statistical / 空")
     expanded_terms: tuple[str, ...] = Field(default=(), description="用领域措辞扩展出的检索词")
 
@@ -137,6 +140,28 @@ class Studio:
         self._lock = threading.RLock()
         self._ingest_cache: dict[tuple[str, int, float], IngestResult] = {}
         self._searcher_cache: dict[tuple[str, ...], Searcher] = {}
+
+    # ---------------------------------------------------------------- 模型
+
+    def settings_for(self, model: str | None = None):
+        """按模型名复制一份配置。
+
+        为什么是"复制"而不是"改 self.settings"：Settings 是 frozen 的，
+        而且一个常驻服务随时可能被两个请求同时问到不同模型——把当前模型
+        存成实例状态，第二个请求就会悄悄用上第一个请求选的那个。
+        复制一份只改 model，其余（密钥、地址、超时）原样带过去。
+        """
+        if self.settings is None:
+            return None
+        if not model or model == self.settings.model:
+            return self.settings
+        return self.settings.model_copy(update={"model": model})
+
+    def models(self, *, refresh: bool = False) -> catalog.ModelList:
+        """可选模型清单。上游问不到就降级成推荐表，不抛异常——界面要能开。"""
+        return catalog.list_available(
+            self.settings, client=self.client, refresh=refresh
+        )
 
     # ---------------------------------------------------------------- 文档
 
@@ -222,7 +247,9 @@ class Studio:
 
     # ---------------------------------------------------------------- 画像
 
-    def profile(self, doc_id: str, *, refresh: bool = False) -> DomainProfile:
+    def profile(
+        self, doc_id: str, *, refresh: bool = False, model: str | None = None
+    ) -> DomainProfile:
         doc = library.get(doc_id, self.root)
         path = profile_path(doc_id, self.root / "profiles")
         if not refresh:
@@ -237,7 +264,7 @@ class Studio:
             terms=candidates,
             doc_ids=(doc_id,),
             llm=self.llm,
-            settings=self.settings,
+            settings=self.settings_for(model),
             client=self.client,
             allow_fallback=True,
             topic_hint=doc.topic or Path(doc.filename).stem,
@@ -324,6 +351,7 @@ class Studio:
         doc_ids: list[str] | None = None,
         top_k: int = 5,
         translate: bool | None = None,
+        model: str | None = None,
     ) -> AnswerView:
         question = question.strip()
         if not question:
@@ -350,15 +378,19 @@ class Studio:
                 expanded = extra
                 results = searcher.search_terms(list(extra) + [question], top_k=top_k)
 
+        cfg = self.settings_for(model)
+        # 输出预算按模型走：推理型模型 800 会吐空正文（见 llmkit/catalog.py 的实测表）。
+        budget = catalog.max_tokens_for(model or getattr(cfg, "model", ""))
         answer = answer_question(
             question,
             searcher=searcher,
             top_k=top_k,
-            settings=self.settings,
+            settings=cfg,
             client=self.client,
             translate=translate,
             profile=profile,
             results=results if expanded else None,
+            max_tokens=budget,
         )
         return AnswerView(
             answer=answer,
@@ -374,6 +406,41 @@ class Studio:
             doc_ids=tuple(d.doc_id for d in docs),
             top_k=top_k,
             translated=translate,
+            model=answer.model,
             profile_source=profile.source if profile else "",
             expanded_terms=expanded,
+        )
+
+    # ---------------------------------------------------------------- 自检
+
+    def selfcheck(
+        self,
+        doc_ids: list[str] | None = None,
+        *,
+        n_terms: int = 5,
+        n_negative: int = 3,
+        top_k: int = 5,
+        model: str | None = None,
+    ) -> SelfCheckReport:
+        """对选定文档跑一遍领域无关自检（不需要标准答案，见 studio/selfcheck.py）。
+
+        为什么放在服务层而不是单独一个模块了事：语种判断（要不要翻译）在这里
+        已经有一份实现，自检必须用同一份判断，否则英文资料会拿中文查询空转。
+        """
+        docs = self._selected(doc_ids)
+        if not docs:
+            raise StudioError(
+                "还没有上传任何资料",
+                code="empty_library",
+                status=409,
+                hint="先上传一份资料，再自检",
+            )
+        return run_selfcheck(
+            self,
+            [d.doc_id for d in docs],
+            n_terms=n_terms,
+            n_negative=n_negative,
+            top_k=top_k,
+            translate=all(d.lang == "en" for d in docs),
+            model=model,
         )

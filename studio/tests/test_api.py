@@ -149,3 +149,67 @@ def test_删除后列表为空再问返回_404(client: TestClient):
     r = client.post("/api/ask", json={"question": "系统聚类法", "doc_ids": ["notes"]})
     assert r.status_code == 404
     assert r.json()["error"]["code"] == "doc_not_found"
+
+
+def test_模型侧失败返回_503_而不是裸_500(tmp_path: Path):
+    """实测来源：余额不足时上游 402，没有处理器就是 500 + 空响应体。
+
+    前端 `api()` 只能拿到 HTTP 500，用户看不到任何可行动的提示。
+    现在统一翻译成 {"error": {code, message, hint}}，前端照旧只读 error.hint。
+    """
+    from llmkit.errors import FatalError
+
+    studio = Studio(
+        tmp_path,
+        settings=Settings(api_key="t", base_url="http://fake", model="fake-model"),
+        client=FakeClient([FatalError("请求本身有问题 402，重试无意义", status=402)]),
+    )
+    c = TestClient(create_app(studio))
+    doc_id = _upload(c).json()["doc"]["doc_id"]
+
+    r = c.post(f"/api/docs/{doc_id}/selfcheck?n_terms=1&n_negative=1")
+
+    assert r.status_code == 503
+    err = r.json()["error"]
+    assert err["code"] == "llm_error"
+    assert "余额" in err["hint"]
+
+
+def test_模型清单接口能打开(client: TestClient):
+    """假客户端没有 models 接口，等于"上游清单端点不可用"。
+    界面必须还能开，所以这里断言的是 fallback 而不是 200 + 真清单。"""
+    body = client.get("/api/models").json()
+
+    assert body["source"] == "fallback"
+    assert body["current"] == "fake-model"
+    assert body["recommended"]
+    assert all("id" in m and "max_tokens" in m for m in body["recommended"])
+    assert body["note"]
+
+
+def test_问答接口把模型透传下去(client: TestClient):
+    doc_id = _upload(client).json()["doc"]["doc_id"]
+    r = client.post(
+        "/api/ask",
+        json={"question": "系统聚类法第一步", "doc_ids": [doc_id], "model": "qwen3.8-max"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["model"] == "qwen3.8-max"
+
+
+def test_不传模型时回落到默认(client: TestClient):
+    _upload(client)
+    body = client.post("/api/ask", json={"question": "系统聚类法第一步"}).json()
+
+    assert body["model"] == "fake-model"
+
+
+def test_模型名传空串等于不指定(client: TestClient):
+    """前端 select 没选时容易发出 model=""，不能因为空串就报"模型不存在"。"""
+    _upload(client)
+    body = client.post(
+        "/api/ask", json={"question": "系统聚类法第一步", "model": "   "}
+    ).json()
+
+    assert body["model"] == "fake-model"
