@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from llmkit.config import Settings
 from llmkit.tests.fakes import FakeClient, make_completion
 from studio.api import create_app
+from studio.profile import DomainProfile, ProfileTerm, profile_path, save_profile
 from studio.service import Studio
 
 NOTES = "\n\n".join(
@@ -213,3 +214,69 @@ def test_模型名传空串等于不指定(client: TestClient):
     ).json()
 
     assert body["model"] == "fake-model"
+
+
+# ---------------------------------------------------------------- 术语来源
+#
+# 这一组守的是"界面上的术语到底是候选还是结论"。
+# 两种来源渲染出来长得一模一样，不标出来就会把「必背」「课件」当成术语看。
+
+
+def test_没生成画像时术语标为统计候选(client: TestClient):
+    doc_id = _upload(client).json()["doc"]["doc_id"]
+
+    body = client.get(f"/api/docs/{doc_id}/terms?top_n=10").json()
+
+    assert body["source"] == "candidates"
+    assert body["terms"]
+
+
+def test_生成画像后术语改读模型筛过的那份(client: TestClient, tmp_path: Path):
+    doc_id = _upload(client).json()["doc"]["doc_id"]
+    save_profile(
+        DomainProfile(
+            doc_ids=(doc_id,),
+            domain="多元统计分析",
+            summary="1 页，讲距离矩阵与判别分析",
+            terms=(
+                ProfileTerm(
+                    term="距离矩阵",
+                    note="先算距离矩阵，再按最短距离合并两类。",
+                    pages=(f"{doc_id}:p1",),
+                    evidence="系统聚类法先计算距离矩阵",
+                    freq=2,
+                ),
+            ),
+            source="llm",
+        ),
+        profile_path(doc_id, tmp_path / "profiles"),
+    )
+
+    body = client.get(f"/api/docs/{doc_id}/terms").json()
+
+    assert body["source"] == "profile"
+    assert body["domain"] == "多元统计分析"
+    assert [t["term"] for t in body["terms"]] == ["距离矩阵"]
+    assert body["terms"][0]["note"]  # 画像术语带一句说明，统计候选没有这个字段
+
+
+def test_画像降级为纯统计时术语仍标候选(client: TestClient, tmp_path: Path):
+    """模型失败时画像 source=statistical，那些词不是模型挑的，不能冒充筛选结果。"""
+    doc_id = _upload(client).json()["doc"]["doc_id"]
+    save_profile(
+        DomainProfile(
+            doc_ids=(doc_id,),
+            domain="",
+            summary="统计画像",
+            terms=(
+                ProfileTerm(term="距离矩阵", pages=(f"{doc_id}:p1",), evidence="距离矩阵", freq=2),
+            ),
+            source="statistical",
+            fallback_reason="HTTP 402 余额不足",
+        ),
+        profile_path(doc_id, tmp_path / "profiles"),
+    )
+
+    body = client.get(f"/api/docs/{doc_id}/terms").json()
+
+    assert body["source"] == "candidates"

@@ -150,9 +150,30 @@ def create_app(studio: Studio | None = None) -> FastAPI:
 
     @app.get("/api/docs/{doc_id}/terms")
     def terms(doc_id: str, top_n: int = Query(default=20, ge=5, le=60)) -> dict:
+        """术语列表。两种来源，前端必须标出来，否则会把候选当成结论看。
+
+          source="profile"     画像生成过 → 模型从候选里挑过，每词带一句说明
+          source="candidates"  还没生成画像 → 纯统计候选
+
+        为什么不直接返回统计结果：统计判据只能回答"这几个字像不像一个词"
+        （凝固度 + 邻字熵 + 频次），回答不了"是不是专业术语"。实测这份 30 页复习提纲，
+        「必背」（出自【必背】标记，30 次）、「课件」（出自"课件 p.23"）、「收尾一句」
+        （元话语）三条判据全部超标，「必背」甚至排到第 2。统计层保证的是"取材不编造"，
+        专业性只能靠模型在候选里挑——把候选当术语展示，等于把这个分工丢掉了。
+        """
+        prof = store.get_profile(doc_id)
+        if prof is not None and prof.terms and prof.source == "llm":
+            return {
+                "doc_id": doc_id,
+                "source": "profile",
+                "domain": prof.domain,
+                "built_at": prof.built_at,
+                "terms": [t.model_dump() for t in prof.terms[:top_n]],
+            }
         items = store.terms(doc_id, top_n=top_n)
         return {
             "doc_id": doc_id,
+            "source": "candidates",
             "terms": [
                 {
                     "term": t.text,

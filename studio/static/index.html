@@ -591,8 +591,44 @@ async function loadDocs(){
 
 /* ------------------------------- 术语 ------------------------------- */
 function emptyTerms(){
-  return `<p class="empty">先上传或选择一份资料，这里会列出从原文统计出来的<b>关键术语</b>，
+  return `<p class="empty">先上传或选择一份资料，这里会列出这份资料里的<b>术语</b>，
     每条都带它在原文出现的页码，点页码可以核对。</p>`;
+}
+
+// 术语有两个来源，必须在界面上说清楚是哪一种。
+// 统计候选和模型筛过的结果长得一模一样，混在一起看就会把「必背」当术语。
+function termsHead(t){
+  if(t.source === "profile"){
+    return `<div class="banner" style="border:1px solid var(--line);color:var(--muted)">
+      <span class="badge llm">模型筛选</span>　领域：${esc(t.domain || "—")}　
+      模型从统计候选里挑过一遍，原文里找不到的已丢弃。</div>`;
+  }
+  return `<div class="banner deny">
+    <b>这些是统计候选，还没经过模型筛选。</b>算法只判断"这几个字是不是总黏在一起"，
+    判断不了"是不是专业术语"——所以「必背」（来自【必背】标记）、「课件」（来自"课件 p.23"）
+    这类版式词会混进来。点右上「生成画像」，模型会从里面挑出真正的领域词。</div>`;
+}
+
+async function loadTerms(id){
+  const box = $("#panel-terms");
+  box.innerHTML = '<div class="empty"><span class="spin"></span>正在读取术语…</div>';
+  try{
+    const t = await api(`/api/docs/${id}/terms?top_n=20`);
+    if(current !== id) return;   // 用户已经切走了，别把旧结果盖上去
+    box.innerHTML = termsHead(t) + (t.terms.length ? t.terms.map(x => `
+      <div class="term-row">
+        <div>
+          <div class="term-name">${esc(x.term)}<em>${x.freq}×</em></div>
+          <div class="pages">${(x.pages||[]).map(p =>
+            `<span class="page" title="${esc(p)}">${esc(zhPage(p))}</span>`).join("")}</div>
+        </div>
+        <div class="term-ctx" title="${esc(x.evidence)}">${esc(trimCtx(x.evidence))}</div>
+      </div>`).join('')
+      : `<p class="empty">没抽到候选术语。原因通常是：资料太短（不足几千字），或正文里汉字太少。</p>`);
+  }catch(e){
+    if(current !== id) return;
+    box.innerHTML = `<p class="empty">${esc(e.message)}${e.hint ? "<br>" + esc(e.hint) : ""}</p>`;
+  }
 }
 
 async function select(id){
@@ -602,25 +638,7 @@ async function select(id){
   $("#buildProfile").disabled = !id;
   if(!id) return;
 
-  const box = $("#panel-terms");
-  box.innerHTML = '<div class="empty"><span class="spin"></span>正在从原文统计术语…</div>';
-  try{
-    const t = await api(`/api/docs/${id}/terms?top_n=20`);
-    if(current !== id) return;   // 用户已经切走了，别把旧结果盖上去
-    box.innerHTML = t.terms.length ? t.terms.map(x => `
-      <div class="term-row">
-        <div>
-          <div class="term-name">${esc(x.term)}<em>${x.freq}×</em></div>
-          <div class="pages">${(x.pages||[]).map(p =>
-            `<span class="page" title="${esc(p)}">${esc(zhPage(p))}</span>`).join("")}</div>
-        </div>
-        <div class="term-ctx" title="${esc(x.evidence)}">${esc(trimCtx(x.evidence))}</div>
-      </div>`).join('')
-      : `<p class="empty">没抽到候选术语。原因通常是：资料太短（不足几千字），或正文里汉字太少。</p>`;
-  }catch(e){
-    if(current !== id) return;
-    box.innerHTML = `<p class="empty">${esc(e.message)}${e.hint ? "<br>" + esc(e.hint) : ""}</p>`;
-  }
+  await loadTerms(id);
   renderCheckShell();
   loadProfile(id);
 }
@@ -696,6 +714,9 @@ $("#buildProfile").onclick = async () => {
   try{
     const d = await api(`/api/docs/${current}/profile` + (model ? `?model=${encodeURIComponent(model)}` : ""), {method:"POST"});
     renderProfile(d.profile);
+    // 画像一生成，术语页的来源就从"统计候选"变成"模型筛过的那份"，
+    // 这里顺手刷新，否则切回去还是旧列表——用户会以为筛选没生效。
+    if(d.profile.source === "llm") await loadTerms(current);
     await loadDocs();
     toast(d.profile.source === "llm"
       ? `画像已生成：${d.profile.terms.length} 个术语`
