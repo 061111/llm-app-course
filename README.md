@@ -54,7 +54,7 @@ A: 按 5/6 算：– (1/6)log2(1/6) – (5/6)log2(5/6) = 0.65
 | 中文资料问答 | 引用越界 / 资料外拒答 | 0 / 2 题 2 拒答 |
 | 上传资料自检 | 引用可核验 / 检索稳定 / 编造 | **13/13** / **100%** / 3 个假问题 2 拒 1 编（单次，见 [`docs/selfcheck.md`](docs/selfcheck.md)） |
 | 术语抽取 | 编造术语（真实调用 16 个术语） | **0** |
-| 测试 | 全套 | **423 passed**（本机样本齐全）；缺中文样本时 411 passed + 12 skipped |
+| 测试 | 全套 | **437 passed**（本机样本齐全）；缺中文样本时 425 passed + 12 skipped |
 
 **这些数字的可信度边界**：18 道题的答案就出自这 199 页，模型看的是原文——这是开卷且答案在手。它证明链路没断、引用没编、该拒答时会拒答，**不证明泛化能力**。换成没见过的文档会掉多少，目前不知道。
 
@@ -138,7 +138,7 @@ export LLMKIT_CORPUS_DIR=/path/to/pdfs       # Linux/macOS
 set LLMKIT_CORPUS_DIR=D:\path\to\pdfs        # Windows cmd
 ```
 
-**没有这批 PDF 也能跑测试**：423 条里 396 条不碰文件；15 条依赖课程语料、12 条依赖中文样本，缺文件时自动跳过（`399 passed, 12~27 skipped`），不会一片红。但建索引和端到端问答需要真实语料。
+**没有这批 PDF 也能跑测试**：437 条里 410 条不碰文件；15 条依赖课程语料、12 条依赖中文样本，缺文件时自动跳过（`399 passed, 12~27 skipped`），不会一片红。但建索引和端到端问答需要真实语料。
 
 ### 5. 建索引并提问
 
@@ -214,8 +214,8 @@ python scripts/verify.py   # lint + 测试 + 索引 + 配置，四项一起过
 | `corpus` | 90 | 页码过滤、符号映射、切分边界、序列化往返 |
 | `retrieval` | 30 | 分词归一化、BM25 打分、翻译缓存、中文问句套话剥离 |
 | `qa` | 20 | prompt 拼装、引用解析、越界检测、双轨判分 |
-| `studio` | 133 | 上传登记、解析安检、术语出处、画像校验、领域无关自检、模型切换、服务与 API（其中 12 条需中文样本） |
-| **合计** | **423** | 全部离线可跑，不依赖真实 API |
+| `studio` | 147 | 上传登记、解析安检、术语出处、画像校验、领域无关自检、模型切换、代金券余额、服务与 API（其中 12 条需中文样本） |
+| **合计** | **437** | 全部离线可跑，不依赖真实 API |
 
 需要真实 API 的只有 `qa/eval_qa.py` 和 `retrieval/eval_retrieval.py` 的翻译步骤；后者带文件缓存，重复跑不重复花钱。
 
@@ -331,7 +331,7 @@ python -m studio                 # http://127.0.0.1:8000
 **提交前必须通过**
 
 ```bash
-python scripts/verify.py     # lint + 423 条测试 + 索引对账 + 配置检查
+python scripts/verify.py     # lint + 437 条测试 + 索引对账 + 配置检查
 ```
 
 四项有一项红就不要提交。特别地，`pytest` 必须全绿，新增逻辑要配测试。
@@ -372,6 +372,7 @@ chore     配置、依赖、脚本
 | [`docs/upload-service.md`](docs/upload-service.md) | 上传服务与中文理解：功能范围、验收标准、七个关键决定、异常矩阵、实测数据、限制 |
 | [`docs/selfcheck.md`](docs/selfcheck.md) | 领域无关自检：不依赖标准答案的四项机械判据、三个真问题与修法、实测记录 |
 | [`docs/model-switch.md`](docs/model-switch.md) | 模型切换：清单从哪来、为什么必须连带改输出预算、10 个模型的实测耗时 |
+| [`docs/coupon-balance.md`](docs/coupon-balance.md) | 代金券余额：为什么模型密钥查不了账单、需要哪个权限点、常见报错对照 |
 | [`docs/course-plan.md`](docs/course-plan.md) | 24 周学习排期与取舍（与代码无关） |
 | [`llmkit/README.md`](llmkit/README.md) | 模型调用层的模块说明与异常表 |
 | [`w02/README.md`](w02/README.md) | W2 教材层的周级索引 |

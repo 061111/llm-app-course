@@ -213,3 +213,43 @@ def test_模型名传空串等于不指定(client: TestClient):
     ).json()
 
     assert body["model"] == "fake-model"
+
+
+# ---------------------------------------------------------------- 代金券余额
+
+
+def test_没配账单_AK_时余额接口返回_怎么配_而不是_500(client: TestClient):
+    """余额跟问答没关系。没配 AK 就让整页报错，等于"想看点钱数先修好服务"。
+
+    所以这里断言的是 200 + configured=false + 一段可执行的说明。
+    """
+    r = client.get("/api/balance")
+
+    assert r.status_code == 200
+    body = r.json()
+    assert body["configured"] is False
+    assert body["ok"] is False
+    assert "ALIYUN_ACCESS_KEY_ID" in body["hint"]
+    assert body["coupons"] == []
+    assert body["error"] is None
+
+
+def test_余额接口把_AK_从配置里读进来(tmp_path: Path):
+    """配置了 AK 就必须真的发请求（这里用假地址让它失败），
+    而不是永远走"未配置"分支——那种 bug 只有现场才发现。"""
+    studio = Studio(
+        tmp_path,
+        settings=Settings(
+            api_key="t",
+            base_url="http://fake",
+            model="fake-model",
+            aliyun_ak_id="LTAI-test",
+            aliyun_ak_secret="secret-test",
+            aliyun_bss_endpoint="https://127.0.0.1:9/",  # 必然连不上，不会真的出网
+        ),
+    )
+    body = TestClient(create_app(studio)).get("/api/balance?refresh=true").json()
+
+    assert body["configured"] is True
+    assert body["ok"] is False
+    assert body["error"]["code"] == "network_error"

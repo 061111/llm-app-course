@@ -22,6 +22,7 @@ from fastapi import FastAPI, File, Query, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from llmkit.errors import ConfigError, LLMError
+from studio import balance
 from studio.errors import StudioError
 from studio.library import MAX_UPLOAD_BYTES
 from studio.service import Studio
@@ -94,6 +95,18 @@ def create_app(studio: Studio | None = None) -> FastAPI:
             "base_url": getattr(store.settings, "base_url", "") or "",
             "has_key": bool(getattr(store.settings, "api_key", "")),
         }
+
+    # ------------------------------------------------------------ 余额
+
+    @app.get("/api/balance")
+    def coupon_balance(refresh: bool = False) -> dict:
+        """代金券余额。查的是阿里云账单接口，不是模型接口。
+
+        三种状态都返回 200：未配置 AK、上游拒绝、查到了。
+        前端据此显示"怎么配"、"为什么失败"或数字——余额查不到不该变成红色报错，
+        它跟问答本身没关系，不该让人以为服务坏了。
+        """
+        return balance.query(store.settings, refresh=refresh).to_payload()
 
     # ------------------------------------------------------------ 模型
 
