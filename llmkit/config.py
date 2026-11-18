@@ -25,11 +25,6 @@ ENV_MODEL = "LLMKIT_MODEL"
 ENV_TIMEOUT = "LLMKIT_TIMEOUT_S"
 ENV_PRICE_IN = "LLMKIT_PRICE_IN"
 ENV_PRICE_OUT = "LLMKIT_PRICE_OUT"
-# 阿里云账单（代金券余额）用的另一套凭据，见 studio/balance.py 顶部的说明。
-# 它不是模型密钥，缺了不影响问答，只是界面上余额那块显示"未配置"。
-ENV_ALIYUN_AK_ID = "ALIYUN_ACCESS_KEY_ID"
-ENV_ALIYUN_AK_SECRET = "ALIYUN_ACCESS_KEY_SECRET"
-ENV_ALIYUN_BSS_ENDPOINT = "ALIYUN_BSS_ENDPOINT"
 
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
@@ -72,11 +67,6 @@ class Settings(BaseModel):
         default=0.0, ge=0.0, description="输入每百万 token 价格（元）。0 表示不估算成本"
     )
     price_out_cny_per_mtok: float = Field(default=0.0, ge=0.0)
-    aliyun_ak_id: str = Field(default="", description="阿里云 AccessKey ID，仅用于查代金券余额")
-    aliyun_ak_secret: str = Field(default="", description="阿里云 AccessKey Secret")
-    aliyun_bss_endpoint: str = Field(
-        default="", description="账单接口地址；空=国内站默认，国际站要显式填"
-    )
 
     @property
     def masked_key(self) -> str:
@@ -130,7 +120,4 @@ class Settings(BaseModel):
             timeout_s=_float(ENV_TIMEOUT, 60.0),
             price_in_cny_per_mtok=_float(ENV_PRICE_IN, 0.0),
             price_out_cny_per_mtok=_float(ENV_PRICE_OUT, 0.0),
-            aliyun_ak_id=merged.get(ENV_ALIYUN_AK_ID, "").strip(),
-            aliyun_ak_secret=merged.get(ENV_ALIYUN_AK_SECRET, "").strip(),
-            aliyun_bss_endpoint=merged.get(ENV_ALIYUN_BSS_ENDPOINT, "").strip(),
         )

@@ -170,27 +170,6 @@
 
   /* ---------------- profile ---------------- */
   .kv{display:grid;grid-template-columns:64px 1fr;gap:6px 12px;font-size:13px;margin:0 0 14px}
-  /* ---------------- 代金券余额 ----------------
-     数字用等宽字体且放大：这块的全部价值就是"一眼看到还剩多少"，
-     混在说明文字里就白做了。 */
-  .bal-top{display:flex;align-items:baseline;gap:8px;margin:0 0 4px;flex-wrap:wrap}
-  .bal-num{font-family:var(--mono);font-size:24px;font-weight:650;line-height:1.1;letter-spacing:-.5px}
-  .bal-num.dim{color:var(--muted);font-size:18px}
-  .bal-unit{color:var(--muted);font-size:12px}
-  .bal-sub{color:var(--muted);font-size:12px;line-height:1.6;margin:0 0 8px}
-  .bal-err{border:1px solid var(--bad);background:var(--bad-soft);color:var(--bad);
-    border-radius:9px;padding:8px 10px;font-size:12px;line-height:1.6;margin:0 0 8px}
-  .bal-err code{font-family:var(--mono);font-size:11px}
-  .bal-note{border:1px solid var(--line);background:#fafbfc;border-radius:9px;
-    padding:8px 10px;font-size:12px;line-height:1.65;color:var(--muted);margin:0 0 8px}
-  .bal-note b{color:var(--ink);font-weight:600}
-  .bal-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;
-    padding:7px 0;border-top:1px solid var(--line);font-size:12px}
-  .bal-row:first-of-type{border-top:0}
-  .bal-row .m{font-family:var(--mono);font-weight:650;text-align:right;white-space:nowrap}
-  .bal-row .d{color:var(--muted);font-size:11.5px;line-height:1.5;grid-column:1/-1}
-  .bal-foot{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
-  .bal-foot .mini{color:var(--muted);font-size:11px;font-family:var(--mono)}
   .kv dt{color:var(--muted);font-size:12px;padding-top:1px}
   .kv dd{margin:0;line-height:1.6}
   .badge{font-size:10.5px;padding:2px 8px;border-radius:99px;font-family:var(--mono);white-space:nowrap}
@@ -358,15 +337,6 @@
         <div class="docs" id="docs"></div>
       </div>
     </section>
-    <section class="card">
-      <div class="card-hd">
-        <h2>代金券余额</h2>
-        <span class="count" id="balHint"></span>
-      </div>
-      <div class="card-bd" id="balanceBody">
-        <p class="hint" style="margin:0">读取中…</p>
-      </div>
-    </section>
   </aside>
 
   <!-- ============ 右：提问 + 资料分析 ============ -->
@@ -432,7 +402,7 @@ const trimCtx = (s) => {
 let docs = [];
 let current = null;
 let lastFile = null;
-let busy = {upload:false, ask:false, profile:false, check:false, balance:false};
+let busy = {upload:false, ask:false, profile:false, check:false};
 // 模型相关：MODELS 是服务端给的清单，model 是用户当前选的。
 // 两者分开存——清单可能拉不到（MODELS 为 null），但选过的模型名要记住。
 let MODELS = null;
@@ -482,104 +452,6 @@ async function health(){
     $("#dot").className = "dot off";
     $("#health").textContent = "服务未连接";
     return false;
-  }
-}
-
-/* ------------------------------- 代金券余额 ------------------------------- */
-// 三种状态分开渲染，因为对用户的含义完全不同：
-//   没配 AK   → 不是错误，是"还差一步配置"
-//   配置了但上游拒绝 → 是真错误，要把上游 Code/Message 原样给出来
-//   查到了    → 给数字
-let BAL = null;
-
-const fmtMoney = (v) => "¥" + Number(v || 0).toFixed(2);
-const fmtTime = (iso) => {
-  if(!iso) return "";
-  const d = new Date(iso);
-  if(isNaN(d)) return iso;
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getMonth() + 1}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
-};
-
-function renderBalance(){
-  const box = $("#balanceBody");
-  const tag = $("#balHint");
-  if(!box) return;
-
-  if(!BAL){
-    box.innerHTML = `<p class="hint" style="margin:0">读取失败</p>`;
-    if(tag) tag.textContent = "";
-    return;
-  }
-
-  if(!BAL.configured){
-    if(tag) tag.textContent = "未配置";
-    box.innerHTML = `
-      <p class="bal-sub">这里能显示这张券还剩多少钱，但需要另配一对阿里云 AccessKey——模型密钥读不了账单。</p>
-      <div class="bal-note">${esc(BAL.hint)}</div>
-      <div class="bal-foot"><button class="act" id="balRefresh">已配好，重试</button></div>`;
-    $("#balRefresh").onclick = () => loadBalance(true);
-    return;
-  }
-
-  if(!BAL.ok){
-    if(tag) tag.textContent = "查询失败";
-    const e = BAL.error || {};
-    box.innerHTML = `
-      <div class="bal-err"><b>${esc(e.code || "失败")}</b>：${esc(e.message || "")}
-        ${e.hint ? `<br>${esc(e.hint)}` : ""}</div>
-      <div class="bal-foot">
-        <button class="act" id="balRefresh">重试</button>
-        <span class="mini">${esc(fmtTime(BAL.checked_at))}</span>
-      </div>`;
-    $("#balRefresh").onclick = () => loadBalance(true);
-    return;
-  }
-
-  const rows = (BAL.coupons || []).filter(c => c.status === "Available");
-  if(tag) tag.textContent = `${BAL.available_count} 张可用`;
-  const expired = (BAL.coupons || []).length - rows.length;
-
-  box.innerHTML = `
-    <div class="bal-top">
-      <span class="bal-num">${fmtMoney(BAL.total_balance)}</span>
-      <span class="bal-unit">可用余额</span>
-    </div>
-    <p class="bal-sub">面额合计 ${fmtMoney(BAL.total_nominal)} · 已用 ${fmtMoney(BAL.total_nominal - BAL.total_balance)}${
-      expired > 0 ? ` · 另有 ${expired} 张过期/作废` : ""}</p>
-    ${rows.map(c => `<div class="bal-row">
-      <span>${esc(c.products || "通用")}</span>
-      <span class="m">${fmtMoney(c.balance)}</span>
-      <span class="d">面额 ${fmtMoney(c.nominal)} · ${esc(c.expiry ? c.expiry.slice(0, 10) + " 到期" : "无到期时间")}${
-        c.description ? " · " + esc(c.description) : ""}</span>
-    </div>`).join("")}
-    <div class="bal-foot">
-      <button class="act" id="balRefresh">刷新</button>
-      <span class="mini">${esc(fmtTime(BAL.checked_at))} 更新</span>
-    </div>
-    <p class="hint" style="margin:8px 0 0">这个数字来自阿里云账单接口，和百炼控制台代金券页一致；
-      每问一次花掉的钱在那边按"分"结算，刷新即可看到最新。</p>`;
-
-  const btn = $("#balRefresh");
-  if(btn) btn.onclick = () => loadBalance(true);
-}
-
-async function loadBalance(refresh = false){
-  const box = $("#balanceBody");
-  if(busy.balance){
-    return;
-  }
-  busy.balance = true;
-  const btn = $("#balRefresh");
-  if(btn){ btn.disabled = true; btn.textContent = "刷新中…"; }
-  try{
-    BAL = await api("/api/balance" + (refresh ? "?refresh=true" : ""));
-    renderBalance();
-  }catch(e){
-    if(box) box.innerHTML = `<p class="hint" style="margin:0">${esc(e.message)}</p>`;
-    if($("#balHint")) $("#balHint").textContent = "不可用";
-  }finally{
-    busy.balance = false;
   }
 }
 
@@ -1176,7 +1048,6 @@ async function ask(auto){
   const ok = await health();
   if(!ok){ toast("连不上本地服务，先运行 python -m studio", true); }
   await loadModels();
-  loadBalance().catch(() => {});
   try{
     await loadDocs();
   }catch(e){
